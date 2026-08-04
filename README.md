@@ -47,3 +47,7 @@ In particular: this project claims **no** right, title, or interest in "Command 
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Renderer work is reviewed against the parity discipline used so far: changes to the D3D11 backend should come with an A/B observation against the DX8 path (screenshot pair, frame-dump diff, or fps measurement) rather than an assertion that it looks right.
+
+## Maintenance level
+
+This is a working reference implementation, maintained casually by one person. Issues are triaged weekly, but may sit; pull requests are reviewed when time permits. Forks and downstream use are encouraged — that's what the GPL is for. If the project grows, co-maintainers are welcome.
