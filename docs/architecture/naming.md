@@ -42,6 +42,39 @@ profiles, and dev INIs do not break:
 
 The fallbacks are a courtesy, not a contract — prefer the new names.
 
+## Verification (2026-08-05, win32-vcpkg Release, retail Zero Hour install)
+
+Build: `cmake --build build\win32-vcpkg --config Release --target z_generals`
+exit 0. Then, against the rebuilt `generalszh.exe`:
+
+**Env knob, both spellings.** Log sink redirected per launch; the line only
+lands at the custom path if the variable was actually read.
+
+    W3DNEXT_D3D11_LOG=<path>  ->  [RenderBackend] constructed D3D11Backend (-gfxBackend d3d11)
+    ZP_D3D11_LOG=<path>       ->  [RenderBackend] constructed D3D11Backend (-gfxBackend d3d11)
+    NC: no -d3d11 flag        ->  [RenderBackend] constructed DX8Backend (default path)
+
+The NC proves the line discriminates rather than always printing.
+
+**INI key.** An additive `Data\INI\GameData\W3DNextDevMode.ini` (`GameData` /
+`W3DNextDevMode = Yes` / `END`) enabled dev mode, so the backend badge drew —
+the badge is gated on that field, so its appearance *is* the proof the renamed
+key parsed:
+
+    with the .ini, -d3d11   ->  badge reads "D3D11"
+    with the .ini, no flag  ->  badge reads "DX8"
+    NC: .ini removed        ->  top-left corner empty, no badge
+
+The NC rules out dev mode having been on for some other reason. The override
+file was deleted afterwards; the install is back to its prior state.
+
+**Caught by the build, worth remembering:** `ZP_D3D11_W3D_TU` looked like
+another env knob but is a compile-time TU guard, set via
+`target_compile_definitions` in `WW3D2/CMakeLists.txt`. Renaming it in the
+sources alone left the guard permanently false, so `D3D11Backend.cpp` and
+`D3D11Backend_W3D.cpp` both emitted the same method bodies — 11× LNK2005 at
+link. The define has to move with the macro.
+
 ## Deliberately NOT renamed
 
 - **`ZeroPowerMenu.tga` / `ZeroPowerMenu<N>` (`Shell.cpp`).** These are *asset
