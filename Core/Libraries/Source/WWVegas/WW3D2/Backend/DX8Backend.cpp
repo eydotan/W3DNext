@@ -314,14 +314,14 @@ void DX8Backend::Draw_Triangles(
 
 void DX8Backend::Draw_Strip(
 	unsigned int start_index,
-	unsigned int index_count,
+	unsigned int primitive_count,
 	unsigned int min_vertex_index,
 	unsigned int vertex_count)
 {
-	WWASSERT(start_index<=65535 && index_count<=65535 && min_vertex_index<=65535 && vertex_count<=65535);
+	WWASSERT(start_index<=65535 && primitive_count<=65535 && min_vertex_index<=65535 && vertex_count<=65535);
 	DX8Wrapper::Draw_Strip(
 		static_cast<unsigned short>(start_index),
-		static_cast<unsigned short>(index_count),
+		static_cast<unsigned short>(primitive_count),
 		static_cast<unsigned short>(min_vertex_index),
 		static_cast<unsigned short>(vertex_count));
 }

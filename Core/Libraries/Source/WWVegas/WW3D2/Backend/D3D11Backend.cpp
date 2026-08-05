@@ -229,6 +229,10 @@ D3D11Backend::D3D11Backend()
 		m_stageNeutral[i] = false;
 		m_stageTexFormatLog[i] = 0;
 	}
+	m_neutralTexture = nullptr;
+	m_neutralSRV = nullptr;
+	m_neutralSampler = nullptr;
+	m_neutralCreateFailed = false;
 	m_captureTexture = nullptr;
 	m_captureSRV = nullptr;
 	m_captureSampler = nullptr;
@@ -469,6 +473,10 @@ void D3D11Backend::Release_Device_Objects()
 		m_gpuProfRing[s].inFlight = false;
 	}
 	m_gpuProfOpen = false;
+	Safe_Release(m_neutralSampler);
+	Safe_Release(m_neutralSRV);
+	Safe_Release(m_neutralTexture);
+	m_neutralCreateFailed = false;
 	Safe_Release(m_captureSampler);
 	Safe_Release(m_captureSRV);
 	Safe_Release(m_captureTexture);
@@ -1242,14 +1250,79 @@ bool D3D11Backend::Upload_Fallback_Texture(unsigned int stage)
 	return Upload_Texture_RGBA(stage, 4, 4, px, /*wrap*/true, /*linear*/false);
 }
 
-bool D3D11Backend::Upload_Neutral_Texture(unsigned int stage)
+bool D3D11Backend::Bind_Neutral_Texture(unsigned int stage)
 {
-	// 4x4 all-white: multiplicative identity (see the header comment).
-	unsigned char px[4 * 4 * 4];
-	for (unsigned int i = 0; i < 4 * 4 * 4; ++i) {
-		px[i] = 255;
+	if (m_device == nullptr || m_context == nullptr || stage >= RB_MAX_TEXTURE_STAGES) {
+		return false;
 	}
-	return Upload_Texture_RGBA(stage, 4, 4, px, /*wrap*/true, /*linear*/false);
+
+	// Lazily create the shared 4x4 all-white texture (multiplicative identity,
+	// see the header comment) ONCE per device; a failed creation is latched so
+	// the per-frame null-bind storm doesn't retry it.
+	if (m_neutralSRV == nullptr) {
+		if (m_neutralCreateFailed) {
+			return false;
+		}
+		unsigned char px[4 * 4 * 4];
+		for (unsigned int i = 0; i < 4 * 4 * 4; ++i) {
+			px[i] = 255;
+		}
+		D3D11_TEXTURE2D_DESC td;
+		ZeroMemory(&td, sizeof(td));
+		td.Width = 4;
+		td.Height = 4;
+		td.MipLevels = 1;
+		td.ArraySize = 1;
+		td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		td.SampleDesc.Count = 1;
+		td.Usage = D3D11_USAGE_IMMUTABLE;
+		td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		D3D11_SUBRESOURCE_DATA srd;
+		srd.pSysMem = px;
+		srd.SysMemPitch = 4 * 4;
+		srd.SysMemSlicePitch = 0;
+		HRESULT hr = m_device->CreateTexture2D(&td, &srd, &m_neutralTexture);
+		if (SUCCEEDED(hr)) {
+			hr = m_device->CreateShaderResourceView(m_neutralTexture, nullptr, &m_neutralSRV);
+		}
+		if (SUCCEEDED(hr)) {
+			// POINT + WRAP, mirroring what the per-stage neutral upload used.
+			D3D11_SAMPLER_DESC sd;
+			ZeroMemory(&sd, sizeof(sd));
+			sd.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+			sd.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+			sd.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+			sd.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+			sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
+			hr = m_device->CreateSamplerState(&sd, &m_neutralSampler);
+		}
+		if (FAILED(hr)) {
+			Safe_Release(m_neutralSampler);
+			Safe_Release(m_neutralSRV);
+			Safe_Release(m_neutralTexture);
+			m_neutralCreateFailed = true;
+			return false;
+		}
+	}
+
+	if (m_stageNeutral[stage] && m_stageSRV[stage] == m_neutralSRV) {
+		return true; // already bound to this slot
+	}
+
+	// The slot takes its own refs on the shared objects, so every existing
+	// per-stage Safe_Release path (real bind replace, Release_Texture_Stages)
+	// works unchanged and can never destroy the shared copy.
+	Safe_Release(m_stageSampler[stage]);
+	Safe_Release(m_stageSRV[stage]);
+	Safe_Release(m_stageTexture[stage]); // slot does not alias the shared texture object
+	m_stageSRV[stage] = m_neutralSRV;
+	m_stageSRV[stage]->AddRef();
+	m_stageSampler[stage] = m_neutralSampler;
+	m_stageSampler[stage]->AddRef();
+	m_context->PSSetShaderResources(stage, 1, &m_stageSRV[stage]);
+	m_context->PSSetSamplers(stage, 1, &m_stageSampler[stage]);
+	m_stageNeutral[stage] = true;
+	return true;
 }
 
 void D3D11Backend::Set_Texture_Stage_Count(unsigned int count)
@@ -2034,7 +2107,12 @@ void D3D11Backend::Handle_Present_Result(long hr)
 	// the DX8 reset machinery services only the D3D8 device, so recovery is not
 	// possible here. A clean exit beats the alternative: a frozen swapchain with
 	// the simulation and audio running headless-blind.
-	ExitProcess(1);
+	// TerminateProcess, NOT ExitProcess: ExitProcess kills the other threads and
+	// then runs DLL_PROCESS_DETACH, which deadlocks if a killed thread held the
+	// CRT or vendor-driver heap lock - likely on exactly the TDR'ing machines
+	// this path fires on. The log line above is already flushed (fopen/append/
+	// fclose per line); nothing here needs orderly teardown.
+	TerminateProcess(GetCurrentProcess(), 1);
 }
 
 void D3D11Backend::Clear(bool clear_color, bool clear_z_stencil, const Vector3 & color, float dest_alpha, float z, unsigned int stencil)
@@ -2571,7 +2649,7 @@ void D3D11Backend::Draw_Triangles(
 
 void D3D11Backend::Draw_Strip(
 	unsigned int start_index,
-	unsigned int index_count,
+	unsigned int primitive_count,
 	unsigned int min_vertex_index,
 	unsigned int vertex_count)
 {
@@ -2579,7 +2657,7 @@ void D3D11Backend::Draw_Strip(
 		D3D11_TRACE_NOOP("no-op: no engine VB/IB uploaded (Draw_Strip skipped)");
 		return;
 	}
-	Log_Draw("strip", index_count, vertex_count, start_index,
+	Log_Draw("strip", primitive_count, vertex_count, start_index,
 		*this, m_renderStateDirty, m_stageSRV[0] != nullptr);
 	Apply_Render_State_Changes(); // draw-time state flush (DX8 semantics; see Draw_Triangles)
 	Update_Constant_Buffer();
@@ -2592,7 +2670,9 @@ void D3D11Backend::Draw_Strip(
 	// Same base-vertex handling as Draw_Triangles: D3D8 adds the SetIndices
 	// base to every index. Non-zero for 2nd+ wave-track batches (the only
 	// live strip caller accumulates batchStart).
-	m_context->DrawIndexed(index_count, start_index, static_cast<INT>(m_indexBaseOffset));
+	// Count contract (IRenderBackend.h): primitive_count TRIANGLES; a strip of
+	// N triangles consumes N + 2 indices (DrawIndexed wants the index count).
+	m_context->DrawIndexed(primitive_count + 2, start_index, static_cast<INT>(m_indexBaseOffset));
 }
 
 void D3D11Backend::Set_Vertex_Shader(unsigned long vertex_shader)

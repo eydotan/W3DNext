@@ -730,15 +730,17 @@ void D3D11Backend::Set_Texture(unsigned int stage, TextureBaseClass * texture)
 		// SRV: D3D8's observed no-texture combiner behavior is "sample white"
 		// (multiplicative identity), while a D3D11 null SRV samples (0,0,0,0)
 		// - black geometry instead of untextured-lit geometry.
-		if (!m_stageNeutral[stage]) {
-			m_stageNeutral[stage] = Upload_Neutral_Texture(stage);
-		}
+		Bind_Neutral_Texture(stage); // memoized; cheap on repeat null binds
 		return;
 	}
 	m_stageNeutral[stage] = false;
 
 	IDirect3DBaseTexture8 * base = texture->Peek_D3D_Base_Texture();
 	if (base == nullptr) {
+		// Same stale-SRV hazard as the null bind above: the engine considers a
+		// texture bound but there are no bytes to upload yet, so neutral-white
+		// (not the previous draw's texture) is what this draw must sample.
+		Bind_Neutral_Texture(stage);
 		return;
 	}
 	if (base->GetType() != D3DRTYPE_TEXTURE) {
@@ -929,7 +931,7 @@ void D3D11Backend::Set_Texture(unsigned int stage, TextureBaseClass * texture)
 			// the dims are non-block-aligned: bind the neutral WHITE identity so the
 			// draw degrades to a no-op instead of corrupting the pass. Logged.
 			Trace_Texture_Fallback(desc.Format, desc.Width, desc.Height, "DXT lock/upload failed -> neutral white");
-			Upload_Neutral_Texture(stage);
+			Bind_Neutral_Texture(stage);
 			Upload_Prof_Account(RB_UPLOAD_FALLBACK, 64, up_t0);
 		}
 		return;
@@ -970,7 +972,7 @@ void D3D11Backend::Set_Texture(unsigned int stage, TextureBaseClass * texture)
 		// identity renders the multiplying shroud pass as a no-op rather than
 		// painting the whole terrain magenta/black.
 		Trace_Texture_Fallback(desc.Format, desc.Width, desc.Height, "LockRect failed -> neutral white");
-		Upload_Neutral_Texture(stage);
+		Bind_Neutral_Texture(stage);
 		Upload_Prof_Account(RB_UPLOAD_FALLBACK, 64, up_t0);
 		return;
 	}

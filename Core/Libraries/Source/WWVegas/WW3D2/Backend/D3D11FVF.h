@@ -76,6 +76,7 @@ struct D3D11InputLayoutDesc
 	D3D11_INPUT_ELEMENT_DESC elements[W3D_FVF_MAX_INPUT_ELEMENTS];
 	unsigned int num_elements;
 	unsigned int stride;
+	bool overflow; // an element did not fit; the desc is invalid (see Push_Element)
 };
 
 // Translate a legacy FVF into a D3D11 input-element array + stride.

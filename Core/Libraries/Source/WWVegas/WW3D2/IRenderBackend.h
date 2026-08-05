@@ -192,6 +192,11 @@ public:
 	// Override the alpha-test reference programmed by Set_Shader (normalized
 	// 0..1, greater-equal convention - the mesh alpha-override fade path).
 	// Set_Shader re-programs the shader's own reference, which is the restore.
+	// Backend notes: DX8Backend writes the value straight to D3DRS_ALPHAREF
+	// (raw pass-through, matching the original game code - the D3D8 runtime
+	// applies whatever D3DRS_ALPHAFUNC is current, so no conversion belongs
+	// there); D3D11Backend converts to its combiner's internal form, mirroring
+	// Set_Shader's LESSEQUAL inversion for INVSRCALPHA blends.
 	virtual void Set_Alpha_Reference(float ref) = 0;
 	virtual void Set_Material(const VertexMaterialClass * material) = 0;
 	virtual void Set_Texture(unsigned int stage, TextureBaseClass * texture) = 0;
@@ -231,9 +236,12 @@ public:
 		unsigned int polygon_count,
 		unsigned int min_vertex_index,
 		unsigned int vertex_count) = 0;
+	// NOTE the count contract: primitive_count is the number of TRIANGLES
+	// (DX8 DrawIndexedPrimitive semantics - every caller passes indexCount-2),
+	// NOT the number of indices. A strip consumes primitive_count + 2 indices.
 	virtual void Draw_Strip(
 		unsigned int start_index,
-		unsigned int index_count,
+		unsigned int primitive_count,
 		unsigned int min_vertex_index,
 		unsigned int vertex_count) = 0;
 

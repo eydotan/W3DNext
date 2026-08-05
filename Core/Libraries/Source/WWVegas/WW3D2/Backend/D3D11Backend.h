@@ -214,13 +214,18 @@ public:
 	unsigned int Peek_Texture_Cache_Hits() const { return m_texCacheHits; }
 	unsigned int Peek_Texture_Cache_Uploads() const { return m_texCacheUploads; }
 
-	// Bind a 4x4 all-WHITE texture to `stage`: the IDENTITY for every multiply
-	// (MODULATE combiner -> texture*diffuse == diffuse; DSTCOLOR framebuffer
-	// blends -> dst*1 == dst). Used for textures whose format IS understood but
-	// whose bytes are UNREADABLE at bind time (default-pool / GPU-only surfaces,
-	// e.g. the fog-of-war shroud): degrading to a no-op beats painting the whole
-	// affected pass magenta or sampling stale garbage.
-	bool Upload_Neutral_Texture(unsigned int stage);
+	// Bind the SHARED 4x4 all-WHITE texture to `stage`: the IDENTITY for every
+	// multiply (MODULATE combiner -> texture*diffuse == diffuse; DSTCOLOR
+	// framebuffer blends -> dst*1 == dst). Used for null Set_Texture binds and
+	// for textures whose format IS understood but whose bytes are UNREADABLE at
+	// bind time (default-pool / GPU-only surfaces, e.g. the fog-of-war shroud):
+	// degrading to a no-op beats painting the whole affected pass magenta or
+	// sampling stale garbage. One device-lifetime texture+SRV+sampler created
+	// lazily on first use (real->null transitions happen dozens of times per
+	// frame on the terrain path - creating per bind was measurable churn); the
+	// stage slot AddRefs the shared objects so the normal per-stage release
+	// invariants hold unchanged.
+	bool Bind_Neutral_Texture(unsigned int stage);
 
 	// Typed, D3D-ABI-free setters for the fixed-function combiner (the
 	// D3DTSS_COLOROP/ALPHAOP world). The RB_TEXOP_*/RB_TEXARG_* enums live in
@@ -441,7 +446,7 @@ public:
 		unsigned int vertex_count) override;
 	virtual void Draw_Strip(
 		unsigned int start_index,
-		unsigned int index_count,
+		unsigned int primitive_count, // TRIANGLES, not indices (see IRenderBackend.h)
 		unsigned int min_vertex_index,
 		unsigned int vertex_count) override;
 
@@ -624,6 +629,13 @@ private:
 	ID3D11SamplerState * m_stageSampler[RB_MAX_TEXTURE_STAGES];
 	TextureBaseClass * m_boundTextures[RB_MAX_TEXTURE_STAGES];
 	bool m_stageNeutral[RB_MAX_TEXTURE_STAGES]; // slot holds the neutral-white fallback (null Set_Texture)
+
+	// The shared neutral-white object behind Bind_Neutral_Texture. Device
+	// lifetime: released in Release_Device_Objects only (NOT per-stage).
+	ID3D11Texture2D * m_neutralTexture;
+	ID3D11ShaderResourceView * m_neutralSRV;
+	ID3D11SamplerState * m_neutralSampler;
+	bool m_neutralCreateFailed; // creation failed once - don't retry per frame
 
 	// --- Uploaded-texture cache ---------------------------------------------
 	// Without this, Set_Texture LockRect'd the source surface and created a NEW

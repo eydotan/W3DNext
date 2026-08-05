@@ -90,7 +90,7 @@ public:
 		unsigned int vertex_count) override;
 	virtual void Draw_Strip(
 		unsigned int start_index,
-		unsigned int index_count,
+		unsigned int primitive_count,
 		unsigned int min_vertex_index,
 		unsigned int vertex_count) override;
 

@@ -33,7 +33,11 @@ void Push_Element(
 	unsigned int byte_size)
 {
 	if (out.num_elements >= W3D_FVF_MAX_INPUT_ELEMENTS) {
-		return; // malformed FVF (up to 15 decodable texcoord sets) must not overrun the array
+		// Malformed FVF (up to 15 decodable texcoord sets) must not overrun the
+		// array - and a capped layout would be self-inconsistent (short stride,
+		// misaligned fetches), so mark the whole translation invalid instead.
+		out.overflow = true;
+		return;
 	}
 	D3D11_INPUT_ELEMENT_DESC & e = out.elements[out.num_elements++];
 	e.SemanticName = semantic_name;
@@ -76,6 +80,7 @@ void Zero_Out(D3D11InputLayoutDesc & out)
 {
 	out.num_elements = 0;
 	out.stride = 0;
+	out.overflow = false;
 	for (unsigned int i = 0; i < W3D_FVF_MAX_INPUT_ELEMENTS; ++i) {
 		out.elements[i].SemanticName = nullptr;
 		out.elements[i].SemanticIndex = 0;
@@ -167,6 +172,10 @@ bool FVF_To_Input_Layout(unsigned int fvf, D3D11InputLayoutDesc & out)
 		Push_Element(out, "TEXCOORD", i, Float_Count_To_Format(floats), floats * 4);
 	}
 
+	if (out.overflow) {
+		Zero_Out(out);
+		return false; // corrupt FVF: fail the translation, the draw is skipped
+	}
 	return true;
 }
 
