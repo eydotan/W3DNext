@@ -2529,7 +2529,7 @@ void D3D11Backend::Draw_Triangles(
 	unsigned int min_vertex_index,
 	unsigned int vertex_count)
 {
-	if (!m_pipelineReady || m_context == nullptr || m_indexBuffer == nullptr) {
+	if (!m_pipelineReady || m_context == nullptr || m_indexBuffer == nullptr || m_vertexBuffer == nullptr) {
 		D3D11_TRACE_NOOP("no-op: no engine VB/IB uploaded (Draw_Triangles skipped)");
 		return;
 	}
@@ -2575,7 +2575,7 @@ void D3D11Backend::Draw_Strip(
 	unsigned int min_vertex_index,
 	unsigned int vertex_count)
 {
-	if (!m_pipelineReady || m_context == nullptr || m_indexBuffer == nullptr) {
+	if (!m_pipelineReady || m_context == nullptr || m_indexBuffer == nullptr || m_vertexBuffer == nullptr) {
 		D3D11_TRACE_NOOP("no-op: no engine VB/IB uploaded (Draw_Strip skipped)");
 		return;
 	}
@@ -2589,7 +2589,10 @@ void D3D11Backend::Draw_Strip(
 	Update_Skinning_Buffer();
 	Update_TexGen_Buffer();
 	m_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	m_context->DrawIndexed(index_count, start_index, 0);
+	// Same base-vertex handling as Draw_Triangles: D3D8 adds the SetIndices
+	// base to every index. Non-zero for 2nd+ wave-track batches (the only
+	// live strip caller accumulates batchStart).
+	m_context->DrawIndexed(index_count, start_index, static_cast<INT>(m_indexBaseOffset));
 }
 
 void D3D11Backend::Set_Vertex_Shader(unsigned long vertex_shader)

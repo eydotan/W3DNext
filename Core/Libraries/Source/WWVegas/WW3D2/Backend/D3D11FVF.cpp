@@ -32,6 +32,9 @@ void Push_Element(
 	DXGI_FORMAT format,
 	unsigned int byte_size)
 {
+	if (out.num_elements >= W3D_FVF_MAX_INPUT_ELEMENTS) {
+		return; // malformed FVF (up to 15 decodable texcoord sets) must not overrun the array
+	}
 	D3D11_INPUT_ELEMENT_DESC & e = out.elements[out.num_elements++];
 	e.SemanticName = semantic_name;
 	e.SemanticIndex = semantic_index;
