@@ -172,6 +172,7 @@ D3D11Backend::D3D11Backend()
 	, m_viewportWidth(0)
 	, m_viewportHeight(0)
 	, m_initResult(S_OK)
+	, m_deviceRemoved(false)
 	, m_vertexBuffer(nullptr)
 	, m_indexBuffer(nullptr)
 	, m_constantBuffer(nullptr)
@@ -1987,7 +1988,7 @@ void D3D11Backend::End_Scene(bool flip_frame)
 		if (Gpu_Profile_Enabled() && (frame % RB_GPUPROF_EMIT_FRAMES) == 0u) {
 			Upload_Prof_Emit(frame);
 		}
-		m_swapChain->Present(0, 0);
+		Handle_Present_Result(m_swapChain->Present(0, 0));
 		Gpu_Profile_Close_Frame();
 	}
 }
@@ -1995,8 +1996,29 @@ void D3D11Backend::End_Scene(bool flip_frame)
 void D3D11Backend::Flip_To_Primary()
 {
 	if (m_swapChain != nullptr) {
-		m_swapChain->Present(0, 0);
+		Handle_Present_Result(m_swapChain->Present(0, 0));
 	}
+}
+
+void D3D11Backend::Handle_Present_Result(long hr)
+{
+	if (hr != DXGI_ERROR_DEVICE_REMOVED && hr != DXGI_ERROR_DEVICE_RESET) {
+		return;
+	}
+	if (!m_deviceRemoved) {
+		m_deviceRemoved = true;
+		const long reason = (m_device != nullptr) ? static_cast<long>(m_device->GetDeviceRemovedReason()) : 0;
+		char line[160];
+		std::snprintf(line, sizeof(line),
+			"[D3D11] FATAL: Present() failed 0x%08lX, GetDeviceRemovedReason=0x%08lX - device removed (TDR?), exiting",
+			hr, reason);
+		D3D11_Log_Line(line);
+	}
+	// No engine-side consumer of Is_Device_Lost() exists on the D3D11 path and
+	// the DX8 reset machinery services only the D3D8 device, so recovery is not
+	// possible here. A clean exit beats the alternative: a frozen swapchain with
+	// the simulation and audio running headless-blind.
+	ExitProcess(1);
 }
 
 void D3D11Backend::Clear(bool clear_color, bool clear_z_stencil, const Vector3 & color, float dest_alpha, float z, unsigned int stencil)
@@ -2047,8 +2069,10 @@ void D3D11Backend::Set_Viewport(const RenderBackendViewport & viewport)
 
 bool D3D11Backend::Is_Device_Lost() const
 {
-	// D3D11 has no lost-device model; resize/occlusion is handled elsewhere.
-	return false;
+	// D3D11 has no DX8-style lost-device model, but the device CAN be removed
+	// (TDR, driver update). Handle_Present_Result latches the flag; kept as a
+	// truthful query even though the current failure policy exits first.
+	return m_deviceRemoved;
 }
 
 bool D3D11Backend::Has_Stencil()

@@ -362,6 +362,12 @@ public:
 	virtual void End_Scene(bool flip_frame) override;
 	virtual void Flip_To_Primary() override;
 
+private:
+	// Latches m_deviceRemoved + logs GetDeviceRemovedReason() once, then exits
+	// (no recovery path exists for the D3D11 device; see the .cpp comment).
+	void Handle_Present_Result(long hr);
+
+public:
 	// --- GPU per-span timestamp profiler (ZP_D3D11_GPUPROF=1) ---------------
 	// Answers WHERE the D3D11 frame's GPU time goes, which fps deltas alone
 	// cannot (parity log 2026-07-26: the fps gap has only ever been inferred
@@ -572,6 +578,7 @@ private:
 	int m_viewportWidth;
 	int m_viewportHeight;
 	long m_initResult; // HRESULT of the last Initialize attempt
+	bool m_deviceRemoved; // Present() returned DEVICE_REMOVED/RESET; surfaced via Is_Device_Lost()
 
 	// Geometry + pipeline objects (steps 4/5).
 	ID3D11Buffer * m_vertexBuffer;
