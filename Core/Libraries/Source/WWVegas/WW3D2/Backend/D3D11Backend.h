@@ -402,6 +402,7 @@ public:
 
 	virtual void Set_Shader(const ShaderClass & shader) override;
 	virtual void Get_Shader(ShaderClass & shader) override;
+	virtual void Set_Alpha_Reference(float ref) override;
 	virtual void Set_Material(const VertexMaterialClass * material) override;
 	virtual void Set_Texture(unsigned int stage, TextureBaseClass * texture) override;
 

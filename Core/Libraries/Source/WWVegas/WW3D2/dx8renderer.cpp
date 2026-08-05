@@ -1903,12 +1903,23 @@ void DX8TextureCategoryClass::Render()
 					}
 					vmaterial->Set_Opacity(mesh->Get_Alpha_Override());
 					g_renderBackend->Set_Shader(theAlphaShader);
+					// Push the overridden opacity through the backend: the D3D11
+					// backend snapshots material values at Set_Material time (into
+					// cbLighting), so mutating the material alone - enough for DX8,
+					// which re-reads it at apply - changes nothing there. The
+					// null-then-set pair defeats same-pointer early-outs (the same
+					// idiom as the restore below).
+					g_renderBackend->Set_Material(nullptr);
+					g_renderBackend->Set_Material(vmaterial);
 					g_renderBackend->Apply_Render_State_Changes();
-					DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHAREF,(int)((float)0x60*mesh->Get_Alpha_Override()));
+					// Backend-routed alpha-ref override (was a raw D3D8-device poke
+					// that the D3D11 backend never saw: fading alpha-tested cutouts
+					// stayed at ref 0x60 and vanished instead of fading).
+					g_renderBackend->Set_Alpha_Reference((float)0x60/255.0f*mesh->Get_Alpha_Override());
 
 					renderer->Render(mesh->Get_Base_Vertex_Offset());
 
-					DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHAREF,0x60);
+					g_renderBackend->Set_Alpha_Reference((float)0x60/255.0f);
 					vmaterial->Set_Opacity(oldOpacity);	//restore previous value
 					vmaterial->Set_Diffuse(oldDiffuse.X,oldDiffuse.Y,oldDiffuse.Z);
 					g_renderBackend->Set_Shader(theShader);	//restore previous value

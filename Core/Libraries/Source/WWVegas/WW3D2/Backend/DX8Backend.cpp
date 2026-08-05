@@ -167,6 +167,11 @@ void DX8Backend::Get_Shader(ShaderClass & shader)
 	DX8Wrapper::Get_Shader(shader);
 }
 
+void DX8Backend::Set_Alpha_Reference(float ref)
+{
+	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHAREF, static_cast<int>(ref * 255.0f + 0.5f));
+}
+
 void DX8Backend::Set_Material(const VertexMaterialClass * material)
 {
 	DX8Wrapper::Set_Material(material);

@@ -189,6 +189,10 @@ public:
 
 	virtual void Set_Shader(const ShaderClass & shader) = 0;
 	virtual void Get_Shader(ShaderClass & shader) = 0;
+	// Override the alpha-test reference programmed by Set_Shader (normalized
+	// 0..1, greater-equal convention - the mesh alpha-override fade path).
+	// Set_Shader re-programs the shader's own reference, which is the restore.
+	virtual void Set_Alpha_Reference(float ref) = 0;
 	virtual void Set_Material(const VertexMaterialClass * material) = 0;
 	virtual void Set_Texture(unsigned int stage, TextureBaseClass * texture) = 0;
 

@@ -1332,6 +1332,20 @@ void D3D11Backend::Set_Alpha_Test(bool enable, bool less_equal, float ref)
 	m_combinerDirty = true;
 }
 
+void D3D11Backend::Set_Alpha_Reference(float ref)
+{
+	// Caller convention is the base greater-equal reference (DX8's ALPHAREF).
+	// Set_Shader may have programmed the inverted LESSEQUAL form (INVSRCALPHA
+	// source blend); mirror the same inversion so the override tests the same
+	// alpha population the shader's own reference did.
+	const float effective = (m_combiner.alphaTestLessEqual != 0u) ? (1.0f - ref) : ref;
+	if (m_combiner.alphaTestRef == effective) {
+		return;
+	}
+	m_combiner.alphaTestRef = effective;
+	m_combinerDirty = true;
+}
+
 void D3D11Backend::Set_Grayscale_Override(bool enable)
 {
 	if ((m_combiner.monoEnable != 0u) == enable) {
