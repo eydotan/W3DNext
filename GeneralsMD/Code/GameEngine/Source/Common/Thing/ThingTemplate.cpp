@@ -1550,8 +1550,8 @@ Int ThingTemplate::calcTimeToBuild( const Player* player) const
 	buildTime *= factionModifier;
 
 	// W3DNext DEVMODE: speed up all construction (structures, units, AI) 10x so
-	// the game is comfortable to play during development. Toggle via ZeroPowerDevMode.
-	if( TheGlobalData->m_zpDevMode )
+	// the game is comfortable to play during development. Toggle via W3DNextDevMode.
+	if( TheGlobalData->m_w3dNextDevMode )
 	{
 		buildTime /= 10;
 		if( buildTime < 1 )

@@ -1,5 +1,11 @@
 # D3D11 backend: real-game bring-up stub-gap inventory
 
+> **Naming note (2026-08-05).** Entries below predate the `ZP_`→`W3DNEXT_`
+> rename and are left verbatim, since they are dated evidence records. Where an
+> entry says `ZP_FOO`, the current knob is `W3DNEXT_FOO` (the old name is still
+> honored as a fallback); `ZeroPowerDevMode` is now `W3DNextDevMode`. See
+> `docs/architecture/naming.md`.
+
 Recon for RENDERER_PORT.md **step 10, phase 0** (branch `renderer-d3d11`). Goal:
 with the D3D11 backend *selectable* in the real game, enumerate which
 currently-stubbed / partial `IRenderBackend` methods the real bring-up path hits,

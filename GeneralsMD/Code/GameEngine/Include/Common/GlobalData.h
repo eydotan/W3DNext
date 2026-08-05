@@ -128,15 +128,15 @@ public:
 	// constructs D3D11Backend and brings up its own device on the game HWND.
 	Bool m_gfxBackendD3D11;
 
-	// W3DNext renderer port: -zpBWFilter <logicframe> deterministically
+	// W3DNext renderer port: -w3dNextBWFilter <logicframe> deterministically
 	// engages the mission black&white screen filter (the ScriptActions
 	// doBlackWhiteMode path) once game logic reaches that frame. 0 (default) =
 	// never. Test hook for the screen-filter A/B oracle.
-	Int m_zpBWFilterAtFrame;
+	Int m_w3dNextBWFilterAtFrame;
 
 	Bool m_windowed;
 	Bool m_borderless;			///< W3DNext: fullscreen is a frameless desktop-sized popup over a *windowed* D3D device (default on). Fixes the DX8 exclusive-fullscreen alt-tab device-lost freeze on Win11; -exclusive opts back into true exclusive fullscreen.
-	Bool m_zpDevMode;			///< W3DNext developer mode (e.g. 10x faster construction). Default on.
+	Bool m_w3dNextDevMode;			///< W3DNext developer mode (e.g. 10x faster construction). Default on.
 	Int m_xResolution;
 	Int m_yResolution;
 	Int m_maxShellScreens;  ///< this many shells layouts can be loaded at once

@@ -1678,7 +1678,7 @@ void W3DDisplay::drawDebugStats()
 	* which backend is live. TOP-LEFT (user request 2026-07-28: dev windows are
 	* often larger than the monitor, so bottom/right UI gets clipped - top-left
 	* is the one corner always visible), below the dev stat/toast rows.
-	* Dev/harness builds only: retail (ZeroPowerDevMode off, no harness flag)
+	* Dev/harness builds only: retail (W3DNextDevMode off, no harness flag)
 	* renders nothing - the ship-gate NC checks for a clean corner. */
 //=============================================================================
 void W3DDisplay::drawBackendBadge()
@@ -1686,8 +1686,8 @@ void W3DDisplay::drawBackendBadge()
 	if( TheDisplayStringManager == nullptr || TheFontLibrary == nullptr )
 		return;
 
-	const Bool zpDev = TheGlobalData != nullptr && TheGlobalData->m_zpDevMode;
-	if( !zpDev && !TheZPUnattendedHarness )
+	const Bool w3dNextDev = TheGlobalData != nullptr && TheGlobalData->m_w3dNextDevMode;
+	if( !w3dNextDev && !TheW3DNextUnattendedHarness )
 		return;
 
 	// Point size scales with the live display height so the badge stays legible
@@ -2183,19 +2183,19 @@ AGAIN:
 				// letterbox so it stays visible during cinematics too.
 				drawBackendBadge();
 
-				// W3DNext renderer port: -zpBWFilter <logicframe> - engage the
+				// W3DNext renderer port: -w3dNextBWFilter <logicframe> - engage the
 				// mission BW screen filter deterministically once game logic
 				// reaches that frame (mirrors ScriptActions::doBlackWhiteMode; the
 				// screen-filter A/B oracle's trigger).
 				{
-					static Bool zpBWFilterFired = FALSE;
-					if (!zpBWFilterFired
-							&& TheGlobalData->m_zpBWFilterAtFrame > 0
+					static Bool w3dNextBWFilterFired = FALSE;
+					if (!w3dNextBWFilterFired
+							&& TheGlobalData->m_w3dNextBWFilterAtFrame > 0
 							&& TheGameLogic != nullptr && TheGameLogic->isInGame()
-							&& TheGameLogic->getFrame() >= (UnsignedInt)TheGlobalData->m_zpBWFilterAtFrame
+							&& TheGameLogic->getFrame() >= (UnsignedInt)TheGlobalData->m_w3dNextBWFilterAtFrame
 							&& TheTacticalView != nullptr)
 					{
-						zpBWFilterFired = TRUE;
+						w3dNextBWFilterFired = TRUE;
 						TheTacticalView->setViewFilterMode(FM_VIEW_BW_BLACK_AND_WHITE);
 						TheTacticalView->setViewFilter(FT_VIEW_BW_FILTER);
 						TheTacticalView->setFadeParameters(30, 1);
@@ -3478,11 +3478,11 @@ void W3DDisplay::takeScreenShot()
 	Bool done = false;
 	while (!done) {
 #if defined(CAPTURE_TO_TARGA)
-		sprintf( leafname, "%s%.3d.tga", "zp_screenshot_", frame_number++);
+		sprintf( leafname, "%s%.3d.tga", "w3dnext_screenshot_", frame_number++);
 #elif defined(CAPTURE_TO_BMP)
-		sprintf( leafname, "%s%.3d.bmp", "zp_screenshot_", frame_number++);
+		sprintf( leafname, "%s%.3d.bmp", "w3dnext_screenshot_", frame_number++);
 #else
-		sprintf( leafname, "%s%.3d.png", "zp_screenshot_", frame_number++);	// W3DNext: PNG by default
+		sprintf( leafname, "%s%.3d.png", "w3dnext_screenshot_", frame_number++);	// W3DNext: PNG by default
 #endif
 		strlcpy(pathname, dirname, ARRAY_SIZE(pathname));
 		strlcat(pathname, leafname, ARRAY_SIZE(pathname));

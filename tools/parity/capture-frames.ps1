@@ -7,7 +7,7 @@
 
 .DESCRIPTION
     The game's -stratagemShot auto-capture boots straight into an AI skirmish and
-    writes zp_screenshot_NNN.png into %W3DNEXT_SCRSHOTS% on a DETERMINISTIC
+    writes w3dnext_screenshot_NNN.png into %W3DNEXT_SCRSHOTS% on a DETERMINISTIC
     FRAME schedule (warm-up 150 ticks, then every 240 ticks, driven from the
     lockstep GameLogic path - not wall-clock), then exits itself. Same map + same
     build => the same frames are captured at the same ticks, which is exactly what

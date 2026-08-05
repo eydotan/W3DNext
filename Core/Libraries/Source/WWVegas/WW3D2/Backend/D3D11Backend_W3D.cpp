@@ -23,9 +23,9 @@
 // TextureBaseClass) - i.e. the full WW3D2 + d3d8 header graph.
 //
 // It is built ONLY into the game (the corei_ww3d2 interface library, which
-// defines ZP_D3D11_W3D_TU); it is deliberately NOT part of the standalone
+// defines W3DNEXT_D3D11_W3D_TU); it is deliberately NOT part of the standalone
 // w3d_d3d11_smoke target, which links no ww3d2. The matching stub bodies in
-// D3D11Backend.cpp are #ifndef ZP_D3D11_W3D_TU'd out here and left in for the
+// D3D11Backend.cpp are #ifndef W3DNEXT_D3D11_W3D_TU'd out here and left in for the
 // smoke build, so exactly one definition of each method exists in each link and
 // the smoke oracle keeps compiling against the raw-bytes Upload_* entry points.
 //
@@ -105,7 +105,7 @@ RenderBackendCmpFunc Map_Depth_Cmp(ShaderClass::DepthCompareType c)
 }
 
 // One-shot (per distinct format+reason) diagnostic for textures that bind the
-// magenta fallback, into the same ZP_D3D11_LOG sink the stub trace uses - so
+// magenta fallback, into the same W3DNEXT_D3D11_LOG sink the stub trace uses - so
 // the remaining format gaps are self-announcing in the log as well as on
 // screen. Recon-grade: not thread-safe, one set lookup per fallback.
 void Trace_Texture_Fallback(unsigned int format, unsigned int w, unsigned int h, const char * reason)
@@ -124,7 +124,7 @@ void Trace_Texture_Fallback(unsigned int format, unsigned int w, unsigned int h,
 	char buf[256];
 	std::snprintf(buf, sizeof(buf),
 		"[D3D11 texture-fallback] format=%u('%s') %ux%u (%s)", format, fourcc, w, h, reason);
-	const char * path = std::getenv("ZP_D3D11_LOG");
+	const char * path = W3DNext_GetEnv("D3D11_LOG");
 	FILE * f = std::fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 	if (f != nullptr) {
 		std::fputs(buf, f);
@@ -133,8 +133,8 @@ void Trace_Texture_Fallback(unsigned int format, unsigned int w, unsigned int h,
 	}
 }
 
-// Diagnostics (ZP_D3D11_DRAWLOG set): one-shot per texture name, log the alpha
-// range of the uploaded level-0 bytes into the ZP_D3D11_LOG sink. Directly
+// Diagnostics (W3DNEXT_D3D11_DRAWLOG set): one-shot per texture name, log the alpha
+// range of the uploaded level-0 bytes into the W3DNEXT_D3D11_LOG sink. Directly
 // tests the "menu art loses alpha in upload" hypothesis class: an opaque
 // button fill must report aMin=255.
 static bool Draw_Log_Enabled()
@@ -142,7 +142,7 @@ static bool Draw_Log_Enabled()
 	static bool s_checked = false, s_on = false;
 	if (!s_checked) {
 		s_checked = true;
-		const char * p = std::getenv("ZP_D3D11_DRAWLOG");
+		const char * p = W3DNext_GetEnv("D3D11_DRAWLOG");
 		s_on = (p != nullptr && p[0] != '\0');
 	}
 	return s_on;
@@ -155,7 +155,7 @@ static void Trace_Texture_Alpha(const char * name, unsigned int format,
 	if (!Draw_Log_Enabled() || !seen.insert(name != nullptr ? name : "").second) {
 		return;
 	}
-	const char * path = std::getenv("ZP_D3D11_LOG");
+	const char * path = W3DNext_GetEnv("D3D11_LOG");
 	FILE * f = std::fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 	if (f != nullptr) {
 		std::fprintf(f, "[D3D11 tex-alpha] %s fmt=%u %ux%u aMin=%u aMax=%u\n",
@@ -265,7 +265,7 @@ bool Decode_Surface_To_RGBA(unsigned int format, unsigned int w, unsigned int h,
 	return true;
 }
 
-// One-shot ZP_D3D11_LOG line the first time a copy-shadow actually feeds a
+// One-shot W3DNEXT_D3D11_LOG line the first time a copy-shadow actually feeds a
 // bind (per format+dims), mirroring Trace_Texture_Fallback's sink - so the
 // shroud path's recovery is machine-checkable in the same log the old
 // "LockRect failed -> neutral white" fallback used to announce itself in.
@@ -280,7 +280,7 @@ void Trace_Copy_Shadow_Bind(unsigned int format, unsigned int w, unsigned int h)
 	char buf[256];
 	std::snprintf(buf, sizeof(buf),
 		"[D3D11 copy-shadow] bind format=%u %ux%u (CopyRects-mirrored content)", format, w, h);
-	const char * path = std::getenv("ZP_D3D11_LOG");
+	const char * path = W3DNext_GetEnv("D3D11_LOG");
 	FILE * f = std::fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 	if (f != nullptr) {
 		std::fputs(buf, f);
@@ -325,7 +325,7 @@ bool Upload_From_Copy_Shadow(D3D11Backend * backend, unsigned int stage,
 
 } // namespace
 
-// Diagnostics accessor for the ZP_D3D11_DRAWLOG per-draw log (W3D TU: needs
+// Diagnostics accessor for the W3DNEXT_D3D11_DRAWLOG per-draw log (W3D TU: needs
 // TextureBaseClass). Smoke-TU stub lives in D3D11Backend.cpp.
 const char * D3D11Backend::Peek_Stage_Tex_Name(unsigned int stage) const
 {
@@ -586,7 +586,7 @@ void D3D11Backend::Set_Light_Environment(LightEnvironmentClass * light_env)
 				static bool logged_point = false;
 				if (!logged_point) {
 					logged_point = true;
-					const char * path = std::getenv("ZP_D3D11_LOG");
+					const char * path = W3DNext_GetEnv("D3D11_LOG");
 					FILE * f = std::fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 					if (f != nullptr) {
 						std::fputs("[D3D11 light-env] partial: point light dropped (no FF point term)\n", f);
@@ -774,7 +774,7 @@ void D3D11Backend::Set_Texture(unsigned int stage, TextureBaseClass * texture)
 		}
 	}
 
-	// Uploaded-texture cache - ON by default (ZP_D3D11_TEXCACHE=0 disables).
+	// Uploaded-texture cache - ON by default (W3DNEXT_D3D11_TEXCACHE=0 disables).
 	//
 	// Every path below LockRects the source surface and creates a fresh
 	// ID3D11Texture2D + SRV + sampler, i.e. an upload on EVERY bind: measured
@@ -804,14 +804,14 @@ void D3D11Backend::Set_Texture(unsigned int stage, TextureBaseClass * texture)
 	// in place mid-life (video buffers, radar), POOL_DEFAULT render targets,
 	// and the GPU-composed fog-of-war shroud dst that _Copy_DX8_Rects
 	// rewrites every frame.
-	// ZP_D3D11_TEXCACHE=0 disables outright; ZP_D3D11_TEXCACHE_PROC=0 reverts
+	// W3DNEXT_D3D11_TEXCACHE=0 disables outright; W3DNEXT_D3D11_TEXCACHE_PROC=0 reverts
 	// procedural textures to per-bind upload (staleness kill switch);
-	// ZP_D3D11_TEXCACHE_TOGGLE=1 alternates per flip frame so one process can
+	// W3DNEXT_D3D11_TEXCACHE_TOGGLE=1 alternates per flip frame so one process can
 	// dump a cache-ON/cache-OFF pair one frame apart (the two-process A/B is
 	// swamped by run-to-run divergence - see the m_texCacheToggleMode comment
 	// in D3D11Backend.h).
 	static const bool s_procCacheEnabled = [] {
-		const char * e = std::getenv("ZP_D3D11_TEXCACHE_PROC");
+		const char * e = W3DNext_GetEnv("D3D11_TEXCACHE_PROC");
 		return !(e != nullptr && e[0] == '0');
 	}();
 	const bool cacheable = Tex_Cache_Enabled_This_Frame() &&
@@ -825,7 +825,7 @@ void D3D11Backend::Set_Texture(unsigned int stage, TextureBaseClass * texture)
 	}
 
 	// Everything past this point is an actual upload; account it (count/bytes/
-	// wall-ms, ZP_D3D11_GPUPROF-gated). A cacheable texture landing here is a
+	// wall-ms, W3DNEXT_D3D11_GPUPROF-gated). A cacheable texture landing here is a
 	// one-time "miss"; a non-cacheable one lands here on EVERY bind ("nc").
 	const long long up_t0 = Upload_Prof_Now();
 	const unsigned int up_cat = cacheable ? RB_UPLOAD_MISS : RB_UPLOAD_NC;

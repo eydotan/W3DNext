@@ -446,4 +446,4 @@ extern Mouse *TheMouse;  ///< extern mouse singleton definition
 // process: never ClipCursor/capture the pointer and never steal focus - a
 // harness run was pinning the pointer inside the game window and locking a
 // remote-desktop user out of their own machine until the watchdog fired.
-extern Bool TheZPUnattendedHarness;
+extern Bool TheW3DNextUnattendedHarness;

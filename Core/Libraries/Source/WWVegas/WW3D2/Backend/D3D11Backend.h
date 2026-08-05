@@ -180,9 +180,9 @@ public:
 		bool wrap = false, bool linear = false,
 		RenderBackendMipFilter mip = RB_MIPF_LINEAR);
 
-	// ZP_D3D11_MIPS=0 clamps Set_Texture back to uploading level 0 only, i.e. the
+	// W3DNEXT_D3D11_MIPS=0 clamps Set_Texture back to uploading level 0 only, i.e. the
 	// pre-2026-07-26 behaviour, WITHOUT a second build. Same in-process-toggle
-	// reasoning as ZP_D3D11_TEXCACHE: an A/B across two builds/runs of this scene
+	// reasoning as W3DNEXT_D3D11_TEXCACHE: an A/B across two builds/runs of this scene
 	// cannot be trusted (runs diverge by the same magnitude as the effect, and the
 	// fps metric alone has read 11-19 for one build), so the only honest A/B is
 	// one binary flipped by an env var and measured repeatedly.
@@ -373,7 +373,7 @@ private:
 	void Handle_Present_Result(long hr);
 
 public:
-	// --- GPU per-span timestamp profiler (ZP_D3D11_GPUPROF=1) ---------------
+	// --- GPU per-span timestamp profiler (W3DNEXT_D3D11_GPUPROF=1) ---------------
 	// Answers WHERE the D3D11 frame's GPU time goes, which fps deltas alone
 	// cannot (parity log 2026-07-26: the fps gap has only ever been inferred
 	// from image diffs, wrongly). Begin_Scene opens a frame (disjoint query +
@@ -381,7 +381,7 @@ public:
 	// timestamps, and the flip End_Scene closes the frame around Present. A
 	// ring of in-flight frames absorbs the GPU->CPU query latency (results are
 	// polled, never spun on); resolved spans accumulate per label and an
-	// averaged "[D3D11 gpuprof]" line goes to the ZP_D3D11_LOG sink every
+	// averaged "[D3D11 gpuprof]" line goes to the W3DNEXT_D3D11_LOG sink every
 	// RB_GPUPROF_EMIT_FRAMES flips. Span cost is attributed to the LATER
 	// marker's label; repeated labels in one frame (terrain under a reflection
 	// pass) sum. Off (default): zero queries created, markers no-op.
@@ -472,7 +472,7 @@ public:
 	// D3D11 and captured pure black.
 	virtual bool Read_Back_Buffer(unsigned char * rgb_dst, unsigned int & width, unsigned int & height) override;
 
-	// Diagnostics accessors for the ZP_D3D11_DRAWLOG per-draw log (read-only;
+	// Diagnostics accessors for the W3DNEXT_D3D11_DRAWLOG per-draw log (read-only;
 	// no rendering decision consumes these).
 	const RenderStateVector & Peek_Render_State() const { return m_renderState; }
 	unsigned int Peek_Last_Shader_Bits() const { return m_lastShaderBits; }
@@ -514,7 +514,7 @@ private:
 	unsigned int m_gpuProfSpanCount;
 	unsigned int m_gpuProfFramesAccum;           // resolved frames since last emit
 
-	// Uncached-upload profiler (CPU side, same ZP_D3D11_GPUPROF gate): every
+	// Uncached-upload profiler (CPU side, same W3DNEXT_D3D11_GPUPROF gate): every
 	// Set_Texture that reaches an actual upload accounts count + bytes +
 	// wall-ms here, split by WHY it wasn't a cache hit. The gpuprof spans
 	// showed the ~11ms/frame mip cost sits in NO draw span and the texcache
@@ -661,14 +661,14 @@ private:
 	// names exactly the frame whose draws produced it.
 	unsigned int m_flipFrame;
 
-	// True when ZP_D3D11_FLIP=1 selected the flip-model swapchain at
+	// True when W3DNEXT_D3D11_FLIP=1 selected the flip-model swapchain at
 	// Initialize (see there). Logged on every gpuprof line so a run's swap
 	// model is machine-checkable, mirroring the mips= falsifier.
 	bool m_flipModel;
 
-	// Cache-toggle verification mode (ZP_D3D11_TEXCACHE_TOGGLE=1): the uploaded-
+	// Cache-toggle verification mode (W3DNEXT_D3D11_TEXCACHE_TOGGLE=1): the uploaded-
 	// texture cache is consulted only on even flip frames, so consecutive dumps
-	// (e.g. ZP_FRAMEDUMP_FRAMES=900,901) are a cache-ON/cache-OFF pair rendered
+	// (e.g. W3DNEXT_FRAMEDUMP_FRAMES=900,901) are a cache-ON/cache-OFF pair rendered
 	// ONE frame apart by ONE process.
 	//
 	// This exists because the obvious oracle - run the game twice, once with the
@@ -692,7 +692,7 @@ private:
 	ID3D11ShaderResourceView * m_captureSRV;
 	ID3D11SamplerState * m_captureSampler;
 
-	// Diagnostics only (ZP_D3D11_DRAWLOG): the last ShaderClass word mirrored by
+	// Diagnostics only (W3DNEXT_D3D11_DRAWLOG): the last ShaderClass word mirrored by
 	// Set_Shader and the D3D8 format of each bound stage texture, so the per-draw
 	// log can name the exact engine state a draw ran with. Not consumed by any
 	// rendering decision.

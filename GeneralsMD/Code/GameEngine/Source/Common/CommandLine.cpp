@@ -573,17 +573,17 @@ Int parseDX8(char *args[], int)
 	return 1;
 }
 
-// W3DNext renderer port: -zpBWFilter <logicframe> deterministically engages
+// W3DNext renderer port: -w3dNextBWFilter <logicframe> deterministically engages
 // the mission BW screen filter at that game-logic frame (screen-filter oracle
 // hook; see W3DDisplay::draw).
 Int parseZPBWFilter(char *args[], int num)
 {
 	if (num > 1 && args[1] != nullptr && args[1][0] != '-')
 	{
-		TheWritableGlobalData->m_zpBWFilterAtFrame = atoi(args[1]);
+		TheWritableGlobalData->m_w3dNextBWFilterAtFrame = atoi(args[1]);
 		return 2;
 	}
-	TheWritableGlobalData->m_zpBWFilterAtFrame = 60;
+	TheWritableGlobalData->m_w3dNextBWFilterAtFrame = 60;
 	return 1;
 }
 
@@ -1413,7 +1413,7 @@ static CommandLineParam paramsForStartup[] =
 	{ "-dx11", parseD3D11 },
 	{ "-dx8", parseDX8 },
 	// W3DNext renderer port: deterministic BW screen-filter engage (oracle hook).
-	{ "-zpBWFilter", parseZPBWFilter },
+	{ "-w3dNextBWFilter", parseZPBWFilter },
 	// Project STRATAGEM: assign a Strategist personality to skirmish AIs.
 	{ "-stratagemAI", parseStratagemAI },
 	// Project STRATAGEM: fixed match seed for the auto-capture harness.

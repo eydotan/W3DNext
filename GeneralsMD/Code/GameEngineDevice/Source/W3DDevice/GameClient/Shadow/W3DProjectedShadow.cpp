@@ -119,39 +119,39 @@ int SHADOW_DECAL_INDEX_SIZE=65536;
 // the engine's dynamic vertex/index buffers instead (RenderVBTile pattern).
 // The DX8 path takes the raw branch untouched.
 #include <vector>
-static std::vector<SHADOW_DECAL_VERTEX> zpDecalCpuVerts;
-static std::vector<UnsignedShort> zpDecalCpuIndices;
+static std::vector<SHADOW_DECAL_VERTEX> w3dNextDecalCpuVerts;
+static std::vector<UnsignedShort> w3dNextDecalCpuIndices;
 
-static bool ZP_Decal_VB_Lock(int firstVert, int numVerts, DWORD flags, SHADOW_DECAL_VERTEX ** out)
+static bool W3DNext_Decal_VB_Lock(int firstVert, int numVerts, DWORD flags, SHADOW_DECAL_VERTEX ** out)
 {
 	if (Is_D3D11_Backend_Active())
 	{
-		if (zpDecalCpuVerts.size() < (size_t)SHADOW_DECAL_VERTEX_SIZE)
-			zpDecalCpuVerts.resize(SHADOW_DECAL_VERTEX_SIZE);
-		*out = &zpDecalCpuVerts[firstVert];
+		if (w3dNextDecalCpuVerts.size() < (size_t)SHADOW_DECAL_VERTEX_SIZE)
+			w3dNextDecalCpuVerts.resize(SHADOW_DECAL_VERTEX_SIZE);
+		*out = &w3dNextDecalCpuVerts[firstVert];
 		return true;
 	}
 	return shadowDecalVertexBufferD3D->Lock(firstVert*sizeof(SHADOW_DECAL_VERTEX),
 		numVerts*sizeof(SHADOW_DECAL_VERTEX), (unsigned char**)out, flags) == D3D_OK;
 }
-static void ZP_Decal_VB_Unlock()
+static void W3DNext_Decal_VB_Unlock()
 {
 	if (!Is_D3D11_Backend_Active())
 		shadowDecalVertexBufferD3D->Unlock();
 }
-static bool ZP_Decal_IB_Lock(int firstIndex, int numIndex, DWORD flags, UnsignedShort ** out)
+static bool W3DNext_Decal_IB_Lock(int firstIndex, int numIndex, DWORD flags, UnsignedShort ** out)
 {
 	if (Is_D3D11_Backend_Active())
 	{
-		if (zpDecalCpuIndices.size() < (size_t)SHADOW_DECAL_INDEX_SIZE)
-			zpDecalCpuIndices.resize(SHADOW_DECAL_INDEX_SIZE);
-		*out = &zpDecalCpuIndices[firstIndex];
+		if (w3dNextDecalCpuIndices.size() < (size_t)SHADOW_DECAL_INDEX_SIZE)
+			w3dNextDecalCpuIndices.resize(SHADOW_DECAL_INDEX_SIZE);
+		*out = &w3dNextDecalCpuIndices[firstIndex];
 		return true;
 	}
 	return shadowDecalIndexBufferD3D->Lock(firstIndex*sizeof(short),
 		numIndex*sizeof(short), (unsigned char**)out, flags) == D3D_OK;
 }
-static void ZP_Decal_IB_Unlock()
+static void W3DNext_Decal_IB_Unlock()
 {
 	if (!Is_D3D11_Backend_Active())
 		shadowDecalIndexBufferD3D->Unlock();
@@ -776,7 +776,7 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 				VertexFormatXYZNDUV2* vb=lock.Get_Formatted_Vertex_Array();
 				if (vb == nullptr)
 					return;
-				const SHADOW_DECAL_VERTEX* src=&zpDecalCpuVerts[nShadowDecalStartBatchVertex];
+				const SHADOW_DECAL_VERTEX* src=&w3dNextDecalCpuVerts[nShadowDecalStartBatchVertex];
 				for (int n=0; n<vcount; ++n,++vb,++src)
 				{
 					vb->x=src->x; vb->y=src->y; vb->z=src->z;
@@ -792,7 +792,7 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 				UnsignedShort* ib=lockib.Get_Index_Array();
 				if (ib == nullptr)
 					return;
-				memcpy(ib,&zpDecalCpuIndices[nShadowDecalStartBatchIndex],icount*sizeof(UnsignedShort));
+				memcpy(ib,&w3dNextDecalCpuIndices[nShadowDecalStartBatchIndex],icount*sizeof(UnsignedShort));
 			}
 			g_renderBackend->Set_Index_Buffer(ib_access,0);
 			g_renderBackend->Set_Vertex_Buffer(vb_access);
@@ -1099,7 +1099,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 		if (nShadowDecalVertsInBuf > (SHADOW_DECAL_VERTEX_SIZE-numVerts))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0], shadow->m_type);
-			if (!ZP_Decal_VB_Lock(0,numVerts,D3DLOCK_DISCARD,&pvVertices))
+			if (!W3DNext_Decal_VB_Lock(0,numVerts,D3DLOCK_DISCARD,&pvVertices))
 				return;
 
 			nShadowDecalStartBatchVertex=0;
@@ -1108,7 +1108,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 			nShadowDecalVertsInBuf=0;
 		}
 		else
-		{	if (!ZP_Decal_VB_Lock(nShadowDecalVertsInBuf,numVerts,D3DLOCK_NOOVERWRITE,&pvVertices))
+		{	if (!W3DNext_Decal_VB_Lock(nShadowDecalVertsInBuf,numVerts,D3DLOCK_NOOVERWRITE,&pvVertices))
 				return;
 		}
 
@@ -1166,13 +1166,13 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 			}
 		}
 
-		ZP_Decal_VB_Unlock();
+		W3DNext_Decal_VB_Unlock();
 
 		if (nShadowDecalIndicesInBuf > (SHADOW_DECAL_INDEX_SIZE-numIndex))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0], shadow->m_type);
 
-			if (!ZP_Decal_IB_Lock(0,numIndex,D3DLOCK_DISCARD,&pvIndices))
+			if (!W3DNext_Decal_IB_Lock(0,numIndex,D3DLOCK_DISCARD,&pvIndices))
 				return;
 
 			nShadowDecalStartBatchIndex=0;
@@ -1181,7 +1181,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 			nShadowDecalIndicesInBuf=0;
 		}
 		else
-		{	if (!ZP_Decal_IB_Lock(nShadowDecalIndicesInBuf,numIndex,D3DLOCK_NOOVERWRITE,&pvIndices))
+		{	if (!W3DNext_Decal_IB_Lock(nShadowDecalIndicesInBuf,numIndex,D3DLOCK_NOOVERWRITE,&pvIndices))
 				return;
 		}
 
@@ -1214,7 +1214,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 			}
 		}
 
-		ZP_Decal_IB_Unlock();
+		W3DNext_Decal_IB_Unlock();
 
 		Int numPolys = (endX - startX)*(endY - startY)*2;	//2 triangles per cell
 		nShadowDecalPolysInBatch += numPolys;
@@ -1271,7 +1271,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 		if (nShadowDecalVertsInBuf > (SHADOW_DECAL_VERTEX_SIZE-numVerts))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0], shadow->m_type);
-			if (!ZP_Decal_VB_Lock(0,numVerts,D3DLOCK_DISCARD,&pvVertices))
+			if (!W3DNext_Decal_VB_Lock(0,numVerts,D3DLOCK_DISCARD,&pvVertices))
 				return;
 
 			nShadowDecalStartBatchVertex=0;
@@ -1280,7 +1280,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 			nShadowDecalVertsInBuf=0;
 		}
 		else
-		{	if (!ZP_Decal_VB_Lock(nShadowDecalVertsInBuf,numVerts,D3DLOCK_NOOVERWRITE,&pvVertices))
+		{	if (!W3DNext_Decal_VB_Lock(nShadowDecalVertsInBuf,numVerts,D3DLOCK_NOOVERWRITE,&pvVertices))
 				return;
 		}
 
@@ -1327,13 +1327,13 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 			pvVertices++;
 		}
 
-		ZP_Decal_VB_Unlock();
+		W3DNext_Decal_VB_Unlock();
 
 		if (nShadowDecalIndicesInBuf > (SHADOW_DECAL_INDEX_SIZE-numIndex))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0],shadow->m_type);
 
-			if (!ZP_Decal_IB_Lock(0,numIndex,D3DLOCK_DISCARD,&pvIndices))
+			if (!W3DNext_Decal_IB_Lock(0,numIndex,D3DLOCK_DISCARD,&pvIndices))
 				return;
 
 			nShadowDecalStartBatchIndex=0;
@@ -1342,7 +1342,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 			nShadowDecalIndicesInBuf=0;
 		}
 		else
-		{	if (!ZP_Decal_IB_Lock(nShadowDecalIndicesInBuf,numIndex,D3DLOCK_NOOVERWRITE,&pvIndices))
+		{	if (!W3DNext_Decal_IB_Lock(nShadowDecalIndicesInBuf,numIndex,D3DLOCK_NOOVERWRITE,&pvIndices))
 				return;
 		}
 
@@ -1356,7 +1356,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 			pvIndices += 6;
 		}
 
-		ZP_Decal_IB_Unlock();
+		W3DNext_Decal_IB_Unlock();
 
 		Int numPolys = 2;	//2 triangles per decal
 		nShadowDecalPolysInBatch += numPolys;

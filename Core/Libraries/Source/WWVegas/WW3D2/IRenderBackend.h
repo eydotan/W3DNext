@@ -272,7 +272,7 @@ public:
 
 	// --- GPU profiling ------------------------------------------------------
 	// Drop a named timestamp into the backend's command stream. A profiling
-	// backend (D3D11, under ZP_D3D11_GPUPROF=1) resolves consecutive markers
+	// backend (D3D11, under W3DNEXT_D3D11_GPUPROF=1) resolves consecutive markers
 	// into per-span GPU times; span cost is attributed to the LATER marker's
 	// label. `label` must be a string literal (stored by pointer, not copied).
 	// Default no-op: the DX8 reference path stays byte-identical, and the D3D11

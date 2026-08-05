@@ -43,6 +43,14 @@ void Set_Use_D3D11_Backend(bool use);
 // False before Init_Render_Backend() / after Shutdown_Render_Backend().
 bool Is_D3D11_Backend_Active();
 
+// Read a W3DNext diagnostic environment knob by its *unprefixed* suffix, e.g.
+// W3DNext_GetEnv("D3D11_LOG") reads W3DNEXT_D3D11_LOG. The renderer port was
+// extracted from the zpower tree, where these knobs carried a "ZP_" prefix, so
+// the legacy name is still honored as a fallback when the W3DNEXT_ one is unset
+// - existing harness scripts and muscle memory keep working. Returns nullptr
+// when neither is set. The returned pointer is owned by the environment block.
+const char * W3DNext_GetEnv(const char * suffix);
+
 // RAII pair of Gpu_Profile_Marker calls, for render entry points with early
 // returns (the terrain Render methods). Emits `begin_label` on construction and
 // `end_label` on destruction; both must be string literals. No-op unless the

@@ -713,7 +713,7 @@ static Bool initializeAppWindows( HINSTANCE hInstance, Int nCmdShow, Bool runWin
 	// W3DNext: WS_VISIBLE at CreateWindow activates the window immediately,
 	// defeating the harness mode's SW_SHOWNOACTIVATE below - create hidden and
 	// let the no-activate ShowWindow do the (only) reveal.
-	if (TheZPUnattendedHarness)
+	if (TheW3DNextUnattendedHarness)
 		windowStyle &= ~WS_VISIBLE;
 	// W3DNext: borderless-fullscreen = a frameless popup covering the desktop, over a
 	// *windowed* device (no exclusive mode -> no Win11 alt-tab device-lost freeze). Not
@@ -770,7 +770,7 @@ static Bool initializeAppWindows( HINSTANCE hInstance, Int nCmdShow, Bool runWin
 														nullptr );
 
 
-	if (TheZPUnattendedHarness)
+	if (TheW3DNextUnattendedHarness)
 	{
 		// W3DNext: harness runs never steal focus or the z-order - shown
 		// WITHOUT activation, at the bottom of the z-order, so a (remote)
@@ -913,7 +913,7 @@ Int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		// W3DNext: unattended harness runs behave as quiet background
 		// processes - no pointer capture (Mouse::canCapture), no focus theft,
 		// window starts minimized (initializeAppWindows). See Mouse.h.
-		TheZPUnattendedHarness = TheGlobalData->m_stratagemShot
+		TheW3DNextUnattendedHarness = TheGlobalData->m_stratagemShot
 			|| TheGlobalData->m_navalShot || TheGlobalData->m_navalSandbox;
 
 #ifdef RTS_ENABLE_CRASHDUMP

@@ -1674,29 +1674,29 @@ void DX8Wrapper::Begin_Scene()
 	DX8WebBrowser::Update();
 }
 
-// Env-gated backbuffer dump (ZP_DX8_FRAMEDUMP=<path-prefix>) - the DX8 twin of
-// the D3D11 backend's ZP_D3D11_FRAMEDUMP (D3D11Backend.cpp Dump_Back_Buffer):
+// Env-gated backbuffer dump (W3DNEXT_DX8_FRAMEDUMP=<path-prefix>) - the DX8 twin of
+// the D3D11 backend's W3DNEXT_D3D11_FRAMEDUMP (D3D11Backend.cpp Dump_Back_Buffer):
 // at flip frames 300/600/900, copy the backbuffer to a lockable render target
 // and write <prefix>_fNNN.ppm (binary P6, same naming/format as the D3D11
 // dump) plus a mean-luminance log line. Focus-independent ground truth for
 // what the backend rendered, so DX8-vs-D3D11 A/B frames are frame-matched and
 // directly consumable by w3d_parity_diff. Only reached in DX8 mode: under
 // D3D11 the backend's own End_Scene handles present (and its own dump).
-static void ZP_Dump_DX8_Back_Buffer(IDirect3DDevice8 * device)
+static void W3DNext_Dump_DX8_Back_Buffer(IDirect3DDevice8 * device)
 {
 	static const char * s_prefix = nullptr;
 	static bool s_checked = false;
 	static unsigned int s_frame = 0;
-	// Dump frames: default 300/600/900; ZP_FRAMEDUMP_FRAMES="900,2700" overrides
+	// Dump frames: default 300/600/900; W3DNEXT_FRAMEDUMP_FRAMES="900,2700" overrides
 	// (shared with the D3D11 twin) so in-world runs can dump past the load screen.
 	static unsigned int s_frames[8] = { 300, 600, 900, 0, 0, 0, 0, 0 };
 	if (!s_checked) {
 		s_checked = true;
-		s_prefix = getenv("ZP_DX8_FRAMEDUMP");
+		s_prefix = W3DNext_GetEnv("DX8_FRAMEDUMP");
 		if (s_prefix != nullptr && s_prefix[0] == '\0') {
 			s_prefix = nullptr;
 		}
-		const char * fl = getenv("ZP_FRAMEDUMP_FRAMES");
+		const char * fl = W3DNext_GetEnv("FRAMEDUMP_FRAMES");
 		if (fl != nullptr && fl[0] != '\0') {
 			int n = 0;
 			for (const char * c = fl; *c != '\0' && n < 8;) {
@@ -1763,7 +1763,7 @@ static void ZP_Dump_DX8_Back_Buffer(IDirect3DDevice8 * device)
 					}
 					fclose(f);
 					const double mean = (double)lum / ((double)desc.Width * desc.Height * 3.0);
-					const char * lp = getenv("ZP_D3D11_LOG");
+					const char * lp = W3DNext_GetEnv("D3D11_LOG");
 					char lpath[512];
 					if (lp == nullptr) {
 						snprintf(lpath, sizeof(lpath), "%s.log", s_prefix);
@@ -1796,7 +1796,7 @@ void DX8Wrapper::End_Scene(bool flip_frames)
 
 	if (flip_frames) {
 		DX8_Assert();
-		ZP_Dump_DX8_Back_Buffer(_Get_D3D_Device8());
+		W3DNext_Dump_DX8_Back_Buffer(_Get_D3D_Device8());
 		HRESULT hr;
 		{
 			WWPROFILE("DX8Device::Present()");
@@ -2146,7 +2146,7 @@ void DX8Wrapper::Draw(
 	Apply_Render_State_Changes();
 
 	// W3DNext renderer port: DX8 twin of the D3D11 drawlog (env
-	// ZP_DX8_DRAWLOG = output path) - logs the applied shader word + stage-0
+	// W3DNEXT_DX8_DRAWLOG = output path) - logs the applied shader word + stage-0
 	// texture per draw, so cross-backend state divergences can be proven from
 	// two logs instead of guessed from one. Zero cost when the env is absent.
 	{
@@ -2154,7 +2154,7 @@ void DX8Wrapper::Draw(
 		static bool s_dlChecked = false;
 		if (!s_dlChecked) {
 			s_dlChecked = true;
-			const char * dlPath = getenv("ZP_DX8_DRAWLOG");
+			const char * dlPath = W3DNext_GetEnv("DX8_DRAWLOG");
 			if (dlPath != nullptr && dlPath[0] != '\0') {
 				s_dl = fopen(dlPath, "a");
 			}

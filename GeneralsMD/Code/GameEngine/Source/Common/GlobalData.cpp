@@ -74,7 +74,10 @@ GlobalData* GlobalData::m_theOriginal = nullptr;
 /*static*/ const FieldParse GlobalData::s_GlobalDataFieldParseTable[] =
 {
 	{ "Windowed",									INI::parseBool,				nullptr,			offsetof( GlobalData, m_windowed ) },
-	{ "ZeroPowerDevMode",					INI::parseBool,				nullptr,			offsetof( GlobalData, m_zpDevMode ) },
+	{ "W3DNextDevMode",						INI::parseBool,				nullptr,			offsetof( GlobalData, m_w3dNextDevMode ) },
+	// Legacy spelling from the zpower tree this port was extracted from; same
+	// field, kept so existing dev INIs keep parsing. Prefer W3DNextDevMode.
+	{ "ZeroPowerDevMode",					INI::parseBool,				nullptr,			offsetof( GlobalData, m_w3dNextDevMode ) },
 	{ "XResolution",							INI::parseInt,				nullptr,			offsetof( GlobalData, m_xResolution ) },
 	{ "YResolution",							INI::parseInt,				nullptr,			offsetof( GlobalData, m_yResolution ) },
 	{ "MapName",									INI::parseAsciiString,nullptr,			offsetof( GlobalData, m_mapName ) },
@@ -638,10 +641,10 @@ GlobalData::GlobalData()
 	m_chipSetType = 0;
 	m_headless = FALSE;
 	m_gfxBackendD3D11 = FALSE;	// W3DNext: default render backend is DX8 (unchanged default path)
-	m_zpBWFilterAtFrame = 0;	// W3DNext: BW screen-filter test hook off by default
+	m_w3dNextBWFilterAtFrame = 0;	// W3DNext: BW screen-filter test hook off by default
 	m_windowed = 0;
 	m_borderless = TRUE;	// W3DNext: default fullscreen is borderless (safe on Win11 alt-tab); -exclusive opts into true exclusive fullscreen
-	m_zpDevMode = FALSE;	// W3DNext: retail default (ship gate 2026-07-28); dev builds opt back in via ZeroPowerDevMode=Yes INI (10x faster construction, dev overlays, backend badge)
+	m_w3dNextDevMode = FALSE;	// W3DNext: retail default (ship gate 2026-07-28); dev builds opt back in via W3DNextDevMode=Yes INI (10x faster construction, dev overlays, backend badge)
 	m_xResolution = DEFAULT_DISPLAY_WIDTH;
 	m_yResolution = DEFAULT_DISPLAY_HEIGHT;
 	m_maxShellScreens = 0;

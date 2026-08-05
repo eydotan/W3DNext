@@ -411,7 +411,7 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 			}
 
 			// W3DNext: holding SHIFT operates in batches of 5
-			Int zpCount = (TheKeyboard && TheKeyboard->isShift()) ? 5 : 1;
+			Int w3dNextCount = (TheKeyboard && TheKeyboard->isShift()) ? 5 : 1;
 
 			// W3DNext: right-clicking a build button cancels the most-recently-queued
 			// units of this type (5 with SHIFT, otherwise 1)
@@ -426,14 +426,14 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 				{
 					if( e->getProductionType() == PRODUCTION_UNIT && e->getProductionObject() == whatToBuild )
 					{
-						if( numFound < zpCount )
+						if( numFound < w3dNextCount )
 							idsToCancel[ numFound++ ] = e->getProductionID();
 						else
 						{
-							// keep a sliding window of the newest zpCount ids
-							for( Int k = 1; k < zpCount; ++k )
+							// keep a sliding window of the newest w3dNextCount ids
+							for( Int k = 1; k < w3dNextCount; ++k )
 								idsToCancel[ k - 1 ] = idsToCancel[ k ];
-							idsToCancel[ zpCount - 1 ] = e->getProductionID();
+							idsToCancel[ w3dNextCount - 1 ] = e->getProductionID();
 						}
 					}
 				}
@@ -447,7 +447,7 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 			}
 
 			// left-click: make sure we can build at least one (for the UI feedback), then
-			// queue up to zpCount. The logic side re-validates every request, so extra
+			// queue up to w3dNextCount. The logic side re-validates every request, so extra
 			// requests beyond what we can afford / fit are safely rejected.
 			CanMakeType cmt = TheBuildAssistant->canMakeUnit(factory, whatToBuild);
 
@@ -480,7 +480,7 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 				break;
 			}
 
-			for( Int n = 0; n < zpCount; ++n )
+			for( Int n = 0; n < w3dNextCount; ++n )
 			{
 				// get a new production id to assign to this, and create a build message
 				ProductionID productionID = pu->requestUniqueUnitID();
@@ -527,8 +527,8 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 
 			// W3DNext: holding SHIFT cancels 5 queued units (this entry plus the
 			// following ones in the queue); otherwise just the clicked entry
-			Int zpCount = (TheKeyboard && TheKeyboard->isShift()) ? 5 : 1;
-			for( Int k = 0; k < zpCount && (i + k) < MAX_BUILD_QUEUE_BUTTONS; ++k )
+			Int w3dNextCount = (TheKeyboard && TheKeyboard->isShift()) ? 5 : 1;
+			for( Int k = 0; k < w3dNextCount && (i + k) < MAX_BUILD_QUEUE_BUTTONS; ++k )
 			{
 				if( m_queueData[ i + k ].type != PRODUCTION_UNIT )
 					break;

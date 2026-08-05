@@ -128,12 +128,12 @@ function Invoke-GameRun {
   Get-ChildItem "$prefix*_f*.ppm" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
   Remove-Item $log -Force -ErrorAction SilentlyContinue
 
-  $env:ZP_FRAMEDUMP_FRAMES = $frames
-  $env:ZP_D3D11_LOG        = $log
-  if ($D3D11) { $env:ZP_D3D11_FRAMEDUMP = $prefix; Remove-Item Env:\ZP_DX8_FRAMEDUMP -ErrorAction SilentlyContinue }
-  else        { $env:ZP_DX8_FRAMEDUMP   = $prefix; Remove-Item Env:\ZP_D3D11_FRAMEDUMP -ErrorAction SilentlyContinue }
-  if ($CacheOff) { $env:ZP_D3D11_TEXCACHE = '0' } else { Remove-Item Env:\ZP_D3D11_TEXCACHE -ErrorAction SilentlyContinue }
-  if ($Toggle)   { $env:ZP_D3D11_TEXCACHE_TOGGLE = '1' } else { Remove-Item Env:\ZP_D3D11_TEXCACHE_TOGGLE -ErrorAction SilentlyContinue }
+  $env:W3DNEXT_FRAMEDUMP_FRAMES = $frames
+  $env:W3DNEXT_D3D11_LOG        = $log
+  if ($D3D11) { $env:W3DNEXT_D3D11_FRAMEDUMP = $prefix; Remove-Item Env:\W3DNEXT_DX8_FRAMEDUMP -ErrorAction SilentlyContinue }
+  else        { $env:W3DNEXT_DX8_FRAMEDUMP   = $prefix; Remove-Item Env:\W3DNEXT_D3D11_FRAMEDUMP -ErrorAction SilentlyContinue }
+  if ($CacheOff) { $env:W3DNEXT_D3D11_TEXCACHE = '0' } else { Remove-Item Env:\W3DNEXT_D3D11_TEXCACHE -ErrorAction SilentlyContinue }
+  if ($Toggle)   { $env:W3DNEXT_D3D11_TEXCACHE_TOGGLE = '1' } else { Remove-Item Env:\W3DNEXT_D3D11_TEXCACHE_TOGGLE -ErrorAction SilentlyContinue }
 
   $gameArgs = @('-win','-noaudio','-ignoreAsserts','-navalSandbox')
   if ($D3D11) { $gameArgs += '-d3d11' }
@@ -157,7 +157,7 @@ function Invoke-GameRun {
   $post = Get-CrashState
   $crashed = ($post.Dumps -ne $pre.Dumps) -or ($pre.Rci -ne $post.Rci)
 
-  foreach ($e in 'ZP_FRAMEDUMP_FRAMES','ZP_D3D11_LOG','ZP_D3D11_FRAMEDUMP','ZP_DX8_FRAMEDUMP','ZP_D3D11_TEXCACHE','ZP_D3D11_TEXCACHE_TOGGLE') {
+  foreach ($e in 'W3DNEXT_FRAMEDUMP_FRAMES','W3DNEXT_D3D11_LOG','W3DNEXT_D3D11_FRAMEDUMP','W3DNEXT_DX8_FRAMEDUMP','W3DNEXT_D3D11_TEXCACHE','W3DNEXT_D3D11_TEXCACHE_TOGGLE') {
     Remove-Item "Env:\$e" -ErrorAction SilentlyContinue
   }
   $dump = if (Test-Path $target) { $target } else { $null }

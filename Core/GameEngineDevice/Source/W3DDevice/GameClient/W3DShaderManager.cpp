@@ -112,11 +112,11 @@ static void Bind_Custom_Shader_Texture(unsigned int stage, TextureBaseClass * te
 //
 // The BW filter's tint color computed in ScreenBWFilter::set (a raw pixel-
 // shader constant on DX8) is stashed here for the D3D11 quad draw.
-static float s_zpBWMonoColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+static float s_w3dNextBWMonoColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 // Motion blur: whether the scene was actually re-rendered this frame (when the
 // DX8 path skips the scene render it reuses the redirected texture from the
 // last rendered frame; the D3D11 path equivalently reuses the last capture).
-static Bool s_zpMBSceneValid = TRUE;
+static Bool s_w3dNextMBSceneValid = TRUE;
 
 /** Interface definition for custom shaders we define in our app.  These shaders can perform more complex
 	operations than those allowed in the WW3D2 shader system.
@@ -362,9 +362,9 @@ Bool ScreenBWFilter::preRender(Bool &skipRender, CustomScenePassModes &scenePass
 
 Bool ScreenBWFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender)
 {
-	const Bool zpD3D11 = Is_D3D11_Backend_Active();
+	const Bool w3dNextD3D11 = Is_D3D11_Backend_Active();
 	IDirect3DTexture8 * tex = nullptr;
-	if (zpD3D11)
+	if (w3dNextD3D11)
 	{	// D3D11: snapshot the just-rendered scene through the backend instead of
 		// the (no-op'd) render-to-texture redirect.
 		g_renderBackend->Capture_Backbuffer();
@@ -388,7 +388,7 @@ Bool ScreenBWFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doE
 
 	Int xpos, ypos, width, height;
 
-	if (!zpD3D11)
+	if (!w3dNextD3D11)
 		DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,tex);	//previously rendered frame inside this texture
 	TheTacticalView->getOrigin(&xpos,&ypos);
 	width=TheTacticalView->getWidth();
@@ -411,7 +411,7 @@ Bool ScreenBWFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doE
 	v[2].color = 0xffffffff;
 	v[3].color = 0xffffffff;
 
-	if (zpD3D11)
+	if (w3dNextD3D11)
 	{	// D3D11: same quad through the backend, monochrome applied by the
 		// FF pixel shader's post-op (mirrors monochrome.nvp c0/c1/c2).
 		RenderBackendFilterQuad quad;
@@ -425,7 +425,7 @@ Bool ScreenBWFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doE
 		quad.monochrome_enable = true;
 		quad.mono_lum[0] = 0.3f; quad.mono_lum[1] = 0.59f; quad.mono_lum[2] = 0.11f; quad.mono_lum[3] = 1.0f;
 		for (Int c = 0; c < 4; ++c) {
-			quad.mono_tint[c] = s_zpBWMonoColor[c];
+			quad.mono_tint[c] = s_w3dNextBWMonoColor[c];
 			quad.mono_fade[c] = m_curFadeValue;
 		}
 		quad.mono_fade[3] = 1.0f;
@@ -496,8 +496,8 @@ Int ScreenBWFilter::set(FilterModes mode)
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZWRITEENABLE,FALSE);
 		g_renderBackend->Apply_Render_State_Changes();	//force update of view and projection matrices
 
-		const Bool zpD3D11 = Is_D3D11_Backend_Active();
-		if (!zpD3D11)
+		const Bool w3dNextD3D11 = Is_D3D11_Backend_Active();
+		if (!w3dNextD3D11)
 		{
 			hr=DX8Wrapper::_Get_D3D_Device8()->SetPixelShader(m_dwBWPixelShader);
 			DX8Wrapper::_Get_D3D_Device8()->SetPixelShaderConstant(0,   D3DXVECTOR4(0.3f, 0.59f, 0.11f, 1.0f), 1);
@@ -529,13 +529,13 @@ Int ScreenBWFilter::set(FilterModes mode)
 			color.z = 0.0f;
 		}
 
-		if (zpD3D11)
+		if (w3dNextD3D11)
 		{	// Stash the tint for the backend quad draw (postRender); the fade
 			// rides along as m_curFadeValue.
-			s_zpBWMonoColor[0] = color.x;
-			s_zpBWMonoColor[1] = color.y;
-			s_zpBWMonoColor[2] = color.z;
-			s_zpBWMonoColor[3] = color.w;
+			s_w3dNextBWMonoColor[0] = color.x;
+			s_w3dNextBWMonoColor[1] = color.y;
+			s_w3dNextBWMonoColor[2] = color.z;
+			s_w3dNextBWMonoColor[3] = color.w;
 		}
 		else
 		{
@@ -852,7 +852,7 @@ Bool ScreenCrossFadeFilter::preRender(Bool &skipRender, CustomScenePassModes &sc
 
 Bool ScreenCrossFadeFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender)
 {
-	const Bool zpD3D11 = Is_D3D11_Backend_Active();
+	const Bool w3dNextD3D11 = Is_D3D11_Backend_Active();
 	IDirect3DTexture8 * tex = nullptr;
 
 	if (m_skipRender)
@@ -861,7 +861,7 @@ Bool ScreenCrossFadeFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bo
 		//that we're fading into.  Okay to render on the next call.
 		m_skipRender = false;
 		doExtraRender = TRUE;
-		if (zpD3D11)
+		if (w3dNextD3D11)
 		{	// D3D11: snapshot the OLD scene now (the extra render draws the new
 			// scene over the backbuffer next; the composite pass below re-draws
 			// this capture on top of it).
@@ -872,7 +872,7 @@ Bool ScreenCrossFadeFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bo
 		return true;
 	}
 
-	if (!zpD3D11)
+	if (!w3dNextD3D11)
 	{
 		tex=W3DShaderManager::getRenderTexture();
 
@@ -895,10 +895,10 @@ Bool ScreenCrossFadeFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bo
 	Int xpos, ypos, width, height;
 	Real radius = 0.0f;
 
-	if (!zpD3D11)
+	if (!w3dNextD3D11)
 		DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,tex);	//previously rendered frame inside this texture
 	if (mode == FM_VIEW_CROSSFADE_CIRCLE)
-	{	if (zpD3D11)
+	{	if (w3dNextD3D11)
 			g_renderBackend->Set_Texture(1, m_fadePatternTexture);
 		else
 			DX8Wrapper::_Get_D3D_Device8()->SetTexture(1,m_fadePatternTexture->Peek_D3D_Texture());
@@ -943,7 +943,7 @@ Bool ScreenCrossFadeFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bo
 	v[2].color = diffuse;
 	v[3].color = diffuse;
 
-	if (zpD3D11)
+	if (w3dNextD3D11)
 	{	// D3D11: old-scene capture composited over the freshly-rendered new
 		// scene. CIRCLE mode modulates the stage-1 mask (bound above); FB_MASK
 		// mode is approximated - the destination-alpha mask pass isn't
@@ -1070,20 +1070,20 @@ Int ScreenMotionBlurFilter::init()
 Bool ScreenMotionBlurFilter::preRender(Bool &skipRender, CustomScenePassModes &scenePassMode)
 {
 	skipRender = m_skipRender;
-	s_zpMBSceneValid = !m_skipRender;
+	s_w3dNextMBSceneValid = !m_skipRender;
 	W3DShaderManager::startRenderToTexture();
 	return true;
 }
 
 Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,Bool &doExtraRender)
 {
-	const Bool zpD3D11 = Is_D3D11_Backend_Active();
+	const Bool w3dNextD3D11 = Is_D3D11_Backend_Active();
 	IDirect3DTexture8 * tex = nullptr;
-	if (zpD3D11)
+	if (w3dNextD3D11)
 	{	// D3D11: capture only when the scene actually re-rendered this frame;
 		// on skipped frames the previous capture is the DX8-equivalent content
 		// (the redirected texture also kept the last rendered scene there).
-		if (s_zpMBSceneValid)
+		if (s_w3dNextMBSceneValid)
 			g_renderBackend->Capture_Backbuffer();
 	}
 	else
@@ -1106,7 +1106,7 @@ Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,B
 
 	Int xpos, ypos, width, height;
 
-	if (!zpD3D11)
+	if (!w3dNextD3D11)
 		DX8Wrapper::_Get_D3D_Device8()->SetTexture(0,tex);	//previously rendered frame inside this texture
 	TheTacticalView->getOrigin(&xpos,&ypos);
 	width=TheTacticalView->getWidth();
@@ -1141,7 +1141,7 @@ Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,B
 	//draw polygons like this is very inefficient but for only 2 triangles, it's
 	//not worth bothering with index/vertex buffers.
 	g_renderBackend->Apply_Render_State_Changes();
-	if (!zpD3D11)
+	if (!w3dNextD3D11)
 		pDev->SetVertexShader(D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1);
 
 	Coord2D center;
@@ -1209,18 +1209,18 @@ Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,B
 	// D3D11: base quad = opaque re-draw of the captured scene (blend disabled on
 	// DX8 too); the alpha override (ALPHAOP SELECTARG1(CURRENT)) maps to
 	// alpha_from_diffuse. Shared by the ghost-quad loop below.
-	RenderBackendFilterQuad zpQuad;
-	if (zpD3D11)
+	RenderBackendFilterQuad w3dNextQuad;
+	if (w3dNextD3D11)
 	{
-		memset(&zpQuad, 0, sizeof(zpQuad));
-		zpQuad.verts = v;
-		zpQuad.vertex_count = 4;
-		zpQuad.stride_bytes = sizeof(_TRANS_LIT_TEX_VERTEX);
-		zpQuad.uv_sets = 1;
-		zpQuad.blend = RenderBackendFilterQuad::BLEND_NONE;
-		zpQuad.use_captured_scene = true;
-		zpQuad.alpha_from_diffuse = true;
-		g_renderBackend->Draw_Screen_Filter_Quad(zpQuad);
+		memset(&w3dNextQuad, 0, sizeof(w3dNextQuad));
+		w3dNextQuad.verts = v;
+		w3dNextQuad.vertex_count = 4;
+		w3dNextQuad.stride_bytes = sizeof(_TRANS_LIT_TEX_VERTEX);
+		w3dNextQuad.uv_sets = 1;
+		w3dNextQuad.blend = RenderBackendFilterQuad::BLEND_NONE;
+		w3dNextQuad.use_captured_scene = true;
+		w3dNextQuad.alpha_from_diffuse = true;
+		g_renderBackend->Draw_Screen_Filter_Quad(w3dNextQuad);
 	}
 	else
 	{
@@ -1256,13 +1256,13 @@ Bool ScreenMotionBlurFilter::postRender(FilterModes mode, Coord2D &scrollDelta,B
 					v[i].v = ((v[i].v-center.y)*factor) + center.y;
 				}
 			}
-			if (zpD3D11)
+			if (w3dNextD3D11)
 			{	// Ghost quads: alpha-faded copies of the capture, blended per the
 				// raw SRCBLEND/DESTBLEND states the DX8 path set above.
-				zpQuad.blend = m_additive
+				w3dNextQuad.blend = m_additive
 					? RenderBackendFilterQuad::BLEND_ADDITIVE
 					: RenderBackendFilterQuad::BLEND_ALPHA;
-				g_renderBackend->Draw_Screen_Filter_Quad(zpQuad);
+				g_renderBackend->Draw_Screen_Filter_Quad(w3dNextQuad);
 			}
 			else
 				pDev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(_TRANS_LIT_TEX_VERTEX));
@@ -2152,7 +2152,7 @@ Int TerrainShaderPixelShader::init()
 	// per-pass state IS mirrored via RB_Mirror_Terrain_FF_Pass) drives terrain.
 	if (Is_D3D11_Backend_Active())
 	{
-		const char * path = getenv("ZP_D3D11_LOG");
+		const char * path = W3DNext_GetEnv("D3D11_LOG");
 		FILE * f = fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 		if (f != nullptr) {
 			fputs("[D3D11 terrain] pso path disabled -> 2-stage FF (mirrored)\n", f);
@@ -2458,7 +2458,7 @@ Int RoadShaderPixelShader::init()
 	// state IS mirrored via RB_Mirror_Road_FF_Pass) drives every road mode.
 	if (Is_D3D11_Backend_Active())
 	{
-		const char * path = getenv("ZP_D3D11_LOG");
+		const char * path = W3DNext_GetEnv("D3D11_LOG");
 		FILE * f = fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 		if (f != nullptr) {
 			fputs("[D3D11 road] pso path disabled -> 2-stage FF (mirrored)\n", f);

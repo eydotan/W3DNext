@@ -30,6 +30,7 @@
 #include "D3D11Backend.h"
 
 #include "D3D11FVF.h"
+#include "RenderBackend.h"   // W3DNext_GetEnv (diagnostic env knobs)
 #include "Shaders/D3D11FFShaders.h"
 
 #include "vector3.h"
@@ -56,7 +57,7 @@
 // When this backend is the live one (only under -gfxBackend d3d11 - the game
 // never constructs it otherwise), each distinct stubbed / partial virtual is
 // recorded the FIRST time it fires, in first-hit order, to a capturable sink:
-// the file named by env ZP_D3D11_LOG (else "d3d11_backend.log" in the process
+// the file named by env W3DNEXT_D3D11_LOG (else "d3d11_backend.log" in the process
 // CWD) plus OutputDebugString. This turns "which IRenderBackend methods does the
 // real bring-up path actually hit" into a machine-collectable list. Recon-only,
 // not thread-safe; costs one std::set lookup per call after the first.
@@ -65,7 +66,7 @@ namespace
 {
 void D3D11_Log_Line(const char * line)
 {
-	const char * path = std::getenv("ZP_D3D11_LOG");
+	const char * path = W3DNext_GetEnv("D3D11_LOG");
 	FILE * f = std::fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 	if (f != nullptr) {
 		std::fputs(line, f);
@@ -212,7 +213,7 @@ D3D11Backend::D3D11Backend()
 	, m_flipFrame(0)
 	, m_flipModel(false)
 	, m_texCacheToggleMode([] {
-		const char * e = std::getenv("ZP_D3D11_TEXCACHE_TOGGLE");
+		const char * e = W3DNext_GetEnv("D3D11_TEXCACHE_TOGGLE");
 		return e != nullptr && e[0] == '1';
 	}())
 	, m_renderStateDirty(true)
@@ -340,14 +341,14 @@ void D3D11Backend::Initialize(void * window, int width, int height)
 	scd.Windowed = TRUE;
 	scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-	// ZP_D3D11_FLIP=1: flip-model swapchain instead of the legacy single-
+	// W3DNEXT_D3D11_FLIP=1: flip-model swapchain instead of the legacy single-
 	// buffered blt DISCARD above. Motivation (2026-07-26, gpuprof): with the
 	// blt model ~85% of the D3D11 frame's wall time sits INSIDE Present
 	// (~41-52ms of a 48-60ms frame at 2560x1440 windowed) - a single-buffered
 	// blt present serializes against DWM composition. Env-toggled so the A/B
 	// is one binary flipped at launch, per the parity log's standing rule.
 	{
-		const char * e = std::getenv("ZP_D3D11_FLIP");
+		const char * e = W3DNext_GetEnv("D3D11_FLIP");
 		m_flipModel = (e != nullptr && e[0] == '1');
 		if (m_flipModel) {
 			scd.BufferCount = 2;   // flip model requires >= 2 buffers
@@ -798,14 +799,14 @@ void D3D11Backend::Update_TexGen_Buffer()
 	m_texgenDirty = false;
 }
 
-// Bounded texgen state-change trace, enabled by env ZP_D3D11_TEXGENLOG=1
-// (lines go to the ZP_D3D11_LOG sink). First 96 changes only - enough to see
+// Bounded texgen state-change trace, enabled by env W3DNEXT_D3D11_TEXGENLOG=1
+// (lines go to the W3DNEXT_D3D11_LOG sink). First 96 changes only - enough to see
 // the per-frame set/reset cadence and matrix values without flooding.
 static bool D3D11_Texgen_Trace_Budget()
 {
 	static int budget = -1;
 	if (budget < 0) {
-		const char * e = std::getenv("ZP_D3D11_TEXGENLOG");
+		const char * e = W3DNext_GetEnv("D3D11_TEXGENLOG");
 		budget = (e != nullptr && e[0] == '1') ? 96 : 0;
 	}
 	if (budget > 0) {
@@ -899,14 +900,14 @@ void D3D11Backend::Set_Bone_Matrices(unsigned int count, const Matrix4x4 * matri
 	m_skinningDirty = true;
 }
 
-// ZP_D3D11_MIPS=0 -> level 0 only (pre-2026-07-26 behaviour). Read once.
+// W3DNEXT_D3D11_MIPS=0 -> level 0 only (pre-2026-07-26 behaviour). Read once.
 bool D3D11Backend::Mip_Upload_Enabled()
 {
 	static bool s_checked = false;
 	static bool s_enabled = true;
 	if (!s_checked) {
 		s_checked = true;
-		const char * e = std::getenv("ZP_D3D11_MIPS");
+		const char * e = W3DNext_GetEnv("D3D11_MIPS");
 		s_enabled = !(e != nullptr && e[0] == '0');
 	}
 	return s_enabled;
@@ -924,7 +925,7 @@ bool D3D11Backend::Upload_Texture_RGBA(unsigned int stage, unsigned int width, u
 	return Upload_Texture_RGBA_Mips(stage, &lvl, 1, wrap, linear);
 }
 
-// Experiment lever for the terrain mip-seam study (ZP_D3D11_LODBIAS=<float>,
+// Experiment lever for the terrain mip-seam study (W3DNEXT_D3D11_LODBIAS=<float>,
 // default 0): a constant sampler LOD bias applied to every mip-enabled
 // sampler. Exists because DX8 (mip POINT, bias 0) and D3D11 compute per-pixel
 // LOD near the 0.5 rounding boundary on the RTS camera and can land on
@@ -935,7 +936,7 @@ static float RB_Mip_LOD_Bias()
 	static float s_bias = 0.0f;
 	if (!s_read) {
 		s_read = true;
-		const char * e = std::getenv("ZP_D3D11_LODBIAS");
+		const char * e = W3DNext_GetEnv("D3D11_LODBIAS");
 		if (e != nullptr && e[0] != '\0') {
 			s_bias = static_cast<float>(std::atof(e));
 		}
@@ -1653,12 +1654,12 @@ void D3D11Backend::Stage_Dynamic_Indices(const unsigned short * indices, unsigne
 //
 // ----------------------------------------------------------------------------
 
-// Forward decl (defined above Draw_Triangles); null unless ZP_D3D11_DRAWLOG set.
+// Forward decl (defined above Draw_Triangles); null unless W3DNEXT_D3D11_DRAWLOG set.
 static FILE * Draw_Log_File();
 
 // ----------------------------------------------------------------------------
 //
-// GPU per-span timestamp profiler (ZP_D3D11_GPUPROF=1) - see D3D11Backend.h
+// GPU per-span timestamp profiler (W3DNEXT_D3D11_GPUPROF=1) - see D3D11Backend.h
 //
 // ----------------------------------------------------------------------------
 
@@ -1668,7 +1669,7 @@ bool D3D11Backend::Gpu_Profile_Enabled()
 	static bool s_enabled = false;
 	if (!s_checked) {
 		s_checked = true;
-		const char * e = std::getenv("ZP_D3D11_GPUPROF");
+		const char * e = W3DNext_GetEnv("D3D11_GPUPROF");
 		s_enabled = (e != nullptr && e[0] != '0');
 	}
 	return s_enabled;
@@ -1906,10 +1907,10 @@ void D3D11Backend::Begin_Scene()
 	}
 }
 
-// Env-gated backbuffer dump (ZP_D3D11_FRAMEDUMP=<path-prefix>): at frames
+// Env-gated backbuffer dump (W3DNEXT_D3D11_FRAMEDUMP=<path-prefix>): at frames
 // 300/600/900 after backend construction, copy the backbuffer to a staging
 // texture and write <prefix>_fNNN.ppm (binary P6), logging mean luminance to
-// the ZP_D3D11_LOG sink. Window/focus-independent ground truth for what the
+// the W3DNEXT_D3D11_LOG sink. Window/focus-independent ground truth for what the
 // backend actually rendered - PrintWindow/screen grabs need the game window
 // focused and unoccluded, which no headless A/B run can guarantee.
 // The caller owns the frame counter (D3D11Backend::m_flipFrame) so the dumped
@@ -1919,20 +1920,20 @@ static void Dump_Back_Buffer(ID3D11Device * device, ID3D11DeviceContext * contex
 {
 	static const char * s_prefix = nullptr;
 	static bool s_checked = false;
-	// Dump frames: default 300/600/900; ZP_FRAMEDUMP_FRAMES="900,2700" overrides
+	// Dump frames: default 300/600/900; W3DNEXT_FRAMEDUMP_FRAMES="900,2700" overrides
 	// (shared with the DX8 twin) so in-world runs can dump past the load screen.
 	static unsigned int s_frames[8] = { 300, 600, 900, 0, 0, 0, 0, 0 };
-	// Cadence mode for video assembly / flicker hunts: ZP_FRAMEDUMP_EVERY=N dumps
-	// every Nth frame, bounded by ZP_FRAMEDUMP_FROM / ZP_FRAMEDUMP_TO (0 = open).
+	// Cadence mode for video assembly / flicker hunts: W3DNEXT_FRAMEDUMP_EVERY=N dumps
+	// every Nth frame, bounded by W3DNEXT_FRAMEDUMP_FROM / W3DNEXT_FRAMEDUMP_TO (0 = open).
 	// Additive to the frame list; off unless set.
 	static unsigned int s_every = 0, s_from = 0, s_to = 0;
 	if (!s_checked) {
 		s_checked = true;
-		s_prefix = std::getenv("ZP_D3D11_FRAMEDUMP");
+		s_prefix = W3DNext_GetEnv("D3D11_FRAMEDUMP");
 		if (s_prefix != nullptr && s_prefix[0] == '\0') {
 			s_prefix = nullptr;
 		}
-		const char * fl = std::getenv("ZP_FRAMEDUMP_FRAMES");
+		const char * fl = W3DNext_GetEnv("FRAMEDUMP_FRAMES");
 		if (fl != nullptr && fl[0] != '\0') {
 			int n = 0;
 			for (const char * c = fl; *c != '\0' && n < 8;) {
@@ -1943,11 +1944,11 @@ static void Dump_Back_Buffer(ID3D11Device * device, ID3D11DeviceContext * contex
 			}
 			for (int i = n; i < 8; ++i) s_frames[i] = 0;
 		}
-		const char * ev = std::getenv("ZP_FRAMEDUMP_EVERY");
+		const char * ev = W3DNext_GetEnv("FRAMEDUMP_EVERY");
 		if (ev != nullptr) s_every = static_cast<unsigned int>(std::atoi(ev));
-		const char * fr = std::getenv("ZP_FRAMEDUMP_FROM");
+		const char * fr = W3DNext_GetEnv("FRAMEDUMP_FROM");
 		if (fr != nullptr) s_from = static_cast<unsigned int>(std::atoi(fr));
-		const char * to = std::getenv("ZP_FRAMEDUMP_TO");
+		const char * to = W3DNext_GetEnv("FRAMEDUMP_TO");
 		if (to != nullptr) s_to = static_cast<unsigned int>(std::atoi(to));
 	}
 	if (s_prefix == nullptr || device == nullptr || context == nullptr || swapChain == nullptr) {
@@ -2004,7 +2005,7 @@ static void Dump_Back_Buffer(ID3D11Device * device, ID3D11DeviceContext * contex
 			context->Unmap(staging, 0);
 			const double mean = static_cast<double>(lum) /
 				(static_cast<double>(desc.Width) * desc.Height * 3.0);
-			const char * lp = std::getenv("ZP_D3D11_LOG");
+			const char * lp = W3DNext_GetEnv("D3D11_LOG");
 			FILE * lf = std::fopen(lp != nullptr ? lp : "d3d11_backend.log", "a");
 			if (lf != nullptr) {
 				// ms since process start on every dump line. Two rungs give a
@@ -2031,7 +2032,7 @@ static void Dump_Back_Buffer(ID3D11Device * device, ID3D11DeviceContext * contex
 bool D3D11Backend::Tex_Cache_Enabled_This_Frame() const
 {
 	static const bool s_baseEnabled = [] {
-		const char * e = std::getenv("ZP_D3D11_TEXCACHE");
+		const char * e = W3DNext_GetEnv("D3D11_TEXCACHE");
 		return !(e != nullptr && e[0] == '0');
 	}();
 	if (!s_baseEnabled) {
@@ -2053,7 +2054,7 @@ void D3D11Backend::End_Scene(bool flip_frame)
 		const unsigned int frame = ++m_flipFrame;
 		Dump_Back_Buffer(m_device, m_context, m_swapChain, frame, texCacheWasOn);
 		// Texture-cache effectiveness, sampled once per 600 frames into the
-		// ZP_D3D11_LOG sink: per-frame deltas make a regression to the old
+		// W3DNEXT_D3D11_LOG sink: per-frame deltas make a regression to the old
 		// upload-on-every-bind behavior (uploads ~= binds) machine-visible.
 		{
 			static unsigned int s_lastHits = 0, s_lastUploads = 0, s_lastEvictions = 0;
@@ -2203,10 +2204,10 @@ void D3D11Backend::Set_Gamma(float gamma, float bright, float contrast, bool cal
 // IndexBufferClass / the dynamic-access classes, which need the full WW3D2 header
 // graph the standalone smoke translation unit does not link. Their real bodies
 // live in the ww3d2-only D3D11Backend_W3D.cpp (built only into the game, which
-// defines ZP_D3D11_W3D_TU). For the smoke build (macro undefined) these records-
+// defines W3DNEXT_D3D11_W3D_TU). For the smoke build (macro undefined) these records-
 // only stubs remain so the vtable stays complete and the smoke test - which drives
 // the GPU path through the typed Upload_* entry points - links unchanged.
-#ifndef ZP_D3D11_W3D_TU
+#ifndef W3DNEXT_D3D11_W3D_TU
 void D3D11Backend::Set_Vertex_Buffer(const VertexBufferClass * vb, unsigned int stream)
 {
 	D3D11_TRACE_PARTIAL();
@@ -2238,10 +2239,10 @@ void D3D11Backend::Set_Index_Buffer_Index_Offset(unsigned int offset)
 	D3D11_TRACE_PARTIAL();
 	m_indexBaseOffset = offset;
 }
-#endif // ZP_D3D11_W3D_TU
+#endif // W3DNEXT_D3D11_W3D_TU
 
 // Real body in D3D11Backend_W3D.cpp (needs shader.h); stub here for the smoke link.
-#ifndef ZP_D3D11_W3D_TU
+#ifndef W3DNEXT_D3D11_W3D_TU
 void D3D11Backend::Set_Shader(const ShaderClass & shader)
 {
 	D3D11_STUB();
@@ -2262,7 +2263,7 @@ void Mirror_Transform_To_Wrapper(TransformKind transform, const Matrix4x4 & m)
 	(void)transform;
 	(void)m;
 }
-#endif // ZP_D3D11_W3D_TU
+#endif // W3DNEXT_D3D11_W3D_TU
 
 void D3D11Backend::Get_Shader(ShaderClass & shader)
 {
@@ -2271,7 +2272,7 @@ void D3D11Backend::Get_Shader(ShaderClass & shader)
 
 // Real bodies in D3D11Backend_W3D.cpp (need vertmaterial.h / texture.h); records-
 // only stubs here for the smoke link (macro undefined).
-#ifndef ZP_D3D11_W3D_TU
+#ifndef W3DNEXT_D3D11_W3D_TU
 void D3D11Backend::Set_Material(const VertexMaterialClass * material)
 {
 	(void)material;
@@ -2285,7 +2286,7 @@ void D3D11Backend::Set_Texture(unsigned int stage, TextureBaseClass * texture)
 		m_boundTextures[stage] = texture;
 	}
 }
-#endif // ZP_D3D11_W3D_TU
+#endif // W3DNEXT_D3D11_W3D_TU
 
 // ----------------------------------------------------------------------------
 //
@@ -2541,7 +2542,7 @@ bool D3D11Backend::Get_Fog_Enable() const
 	return m_fogEnable;
 }
 
-#ifndef ZP_D3D11_W3D_TU
+#ifndef W3DNEXT_D3D11_W3D_TU
 // Real body in D3D11Backend_W3D.cpp (mirrors into DX8Wrapper::Set_Light_Environment
 // so the sorted-flush light state is captured); records-only stub for the smoke link.
 void D3D11Backend::Set_Light_Environment(LightEnvironmentClass * light_env)
@@ -2553,14 +2554,14 @@ void D3D11Backend::Set_Light_Environment(LightEnvironmentClass * light_env)
 	D3D11_TRACE_PARTIAL();
 	m_lightEnvironment = light_env;
 }
-#endif // ZP_D3D11_W3D_TU
+#endif // W3DNEXT_D3D11_W3D_TU
 
 LightEnvironmentClass * D3D11Backend::Get_Light_Environment() const
 {
 	return m_lightEnvironment;
 }
 
-// Optional per-draw sequence log, enabled by setting env ZP_D3D11_DRAWLOG to an
+// Optional per-draw sequence log, enabled by setting env W3DNEXT_D3D11_DRAWLOG to an
 // output file path. One line per executed draw: running index, geometry counts,
 // and the CURRENT render-state vector + whether it was still unflushed when the
 // draw arrived. Zero cost when the env var is absent (checked once).
@@ -2570,7 +2571,7 @@ static FILE * Draw_Log_File()
 	static bool s_checked = false;
 	if (!s_checked) {
 		s_checked = true;
-		const char * path = std::getenv("ZP_D3D11_DRAWLOG");
+		const char * path = W3DNext_GetEnv("D3D11_DRAWLOG");
 		if (path != nullptr && path[0] != '\0') {
 			s_file = std::fopen(path, "a");
 		}

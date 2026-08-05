@@ -24,7 +24,7 @@
 //
 // with a nonzero exit on FAIL. It consumes exactly the format W3DDisplay::
 // takeScreenShot writes today: 8-bit truecolor (color type 2), single zlib
-// IDAT, filter-0 scanlines, named zp_screenshot_NNN.png. The decoder is a
+// IDAT, filter-0 scanlines, named w3dnext_screenshot_NNN.png. The decoder is a
 // touch broader (grayscale/RGBA/all five filter types) so real captured assets
 // also load, but everything routes through the same RGB diff core.
 //
@@ -228,7 +228,7 @@ bool decodePNG(const std::vector<uint8_t> &file, Image &img, std::string &err)
 
 // ---------------------------------------------------------------------------
 // Minimal PPM (binary P6, maxval 255) decoder - the format the in-engine
-// framedumps write (ZP_DX8_FRAMEDUMP / ZP_D3D11_FRAMEDUMP), so backend
+// framedumps write (W3DNEXT_DX8_FRAMEDUMP / W3DNEXT_D3D11_FRAMEDUMP), so backend
 // backbuffer dumps are consumable directly without a conversion step.
 // ---------------------------------------------------------------------------
 bool decodePPM(const std::vector<uint8_t> &file, Image &img, std::string &err)

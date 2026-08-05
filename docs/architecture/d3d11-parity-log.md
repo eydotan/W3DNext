@@ -1,5 +1,11 @@
 # D3D11 backend: DX8-vs-D3D11 parity A/B log
 
+> **Naming note (2026-08-05).** Entries below predate the `ZP_`→`W3DNEXT_`
+> rename and are left verbatim, since they are dated evidence records. Where an
+> entry says `ZP_FOO`, the current knob is `W3DNEXT_FOO` (the old name is still
+> honored as a fallback); `ZeroPowerDevMode` is now `W3DNextDevMode`. See
+> `docs/architecture/naming.md`.
+
 Running log of *real* (in-game, not synthetic) parity comparisons between the
 default DX8 backend and the D3D11 backend (`-gfxBackend d3d11`), per
 RENDERER_PORT.md step 10. Oracle: `w3d_parity_diff` (`Core/Tests/parity/`).

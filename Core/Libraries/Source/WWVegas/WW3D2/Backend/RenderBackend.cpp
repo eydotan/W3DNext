@@ -39,15 +39,35 @@ void Set_Use_D3D11_Backend(bool use)
 	s_useD3D11Backend = use;
 }
 
+const char * W3DNext_GetEnv(const char * suffix)
+{
+	if (suffix == nullptr) {
+		return nullptr;
+	}
+
+	char name[128];
+
+	// Preferred, project-named form.
+	std::snprintf(name, sizeof(name), "W3DNEXT_%s", suffix);
+	const char * value = std::getenv(name);
+	if (value != nullptr) {
+		return value;
+	}
+
+	// Legacy zpower-tree form, kept so existing harness scripts keep working.
+	std::snprintf(name, sizeof(name), "ZP_%s", suffix);
+	return std::getenv(name);
+}
+
 namespace
 {
 // Recon-only diagnostic sink, self-contained (Core must not depend on the
-// Generals debug log). Appends one line to the file named by env ZP_D3D11_LOG
+// Generals debug log). Appends one line to the file named by env W3DNEXT_D3D11_LOG
 // (else "d3d11_backend.log" in the process CWD) and mirrors to OutputDebugString,
 // so the selected-backend line is capturable both in-game and from a smoke run.
 void RB_Log_Line(const char * line)
 {
-	const char * path = std::getenv("ZP_D3D11_LOG");
+	const char * path = W3DNext_GetEnv("D3D11_LOG");
 	FILE * f = std::fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 	if (f != nullptr) {
 		std::fputs(line, f);

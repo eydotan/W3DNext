@@ -16,8 +16,8 @@
 
   Configs (one binary, env-toggled - the two-build A/B is untrustworthy here for
   the same reason the texcache A/B was, see the parity log):
-    d3d11_mips_on   ZP_D3D11_MIPS unset (default)
-    d3d11_mips_off  ZP_D3D11_MIPS=0     (level 0 only = pre-fix behaviour)
+    d3d11_mips_on   W3DNEXT_D3D11_MIPS unset (default)
+    d3d11_mips_off  W3DNEXT_D3D11_MIPS=0     (level 0 only = pre-fix behaviour)
     dx8             reference; should land on its ~30 cap
 
   FALSIFICATION built in:
@@ -84,11 +84,11 @@ function Invoke-FpsRun {
   Get-ChildItem "$prefix*_f*.ppm" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
   Remove-Item $log -Force -ErrorAction SilentlyContinue
 
-  $env:ZP_FRAMEDUMP_FRAMES = $Frames
-  $env:ZP_D3D11_LOG        = $log
-  if ($D3D11) { $env:ZP_D3D11_FRAMEDUMP = $prefix; Remove-Item Env:\ZP_DX8_FRAMEDUMP -ErrorAction SilentlyContinue }
-  else        { $env:ZP_DX8_FRAMEDUMP   = $prefix; Remove-Item Env:\ZP_D3D11_FRAMEDUMP -ErrorAction SilentlyContinue }
-  if ($Mips -eq 'off') { $env:ZP_D3D11_MIPS = '0' } else { Remove-Item Env:\ZP_D3D11_MIPS -ErrorAction SilentlyContinue }
+  $env:W3DNEXT_FRAMEDUMP_FRAMES = $Frames
+  $env:W3DNEXT_D3D11_LOG        = $log
+  if ($D3D11) { $env:W3DNEXT_D3D11_FRAMEDUMP = $prefix; Remove-Item Env:\W3DNEXT_DX8_FRAMEDUMP -ErrorAction SilentlyContinue }
+  else        { $env:W3DNEXT_DX8_FRAMEDUMP   = $prefix; Remove-Item Env:\W3DNEXT_D3D11_FRAMEDUMP -ErrorAction SilentlyContinue }
+  if ($Mips -eq 'off') { $env:W3DNEXT_D3D11_MIPS = '0' } else { Remove-Item Env:\W3DNEXT_D3D11_MIPS -ErrorAction SilentlyContinue }
 
   $gameArgs = @('-win','-noaudio','-ignoreAsserts','-navalSandbox')
   if ($D3D11) { $gameArgs += '-d3d11' }
@@ -108,7 +108,7 @@ function Invoke-FpsRun {
   $alive = -not $p.HasExited
   if ($alive) { try { $p.Kill(); $p.WaitForExit(5000) } catch {} }
   Start-Sleep -Milliseconds 400
-  foreach ($e in 'ZP_FRAMEDUMP_FRAMES','ZP_D3D11_LOG','ZP_D3D11_FRAMEDUMP','ZP_DX8_FRAMEDUMP','ZP_D3D11_MIPS') {
+  foreach ($e in 'W3DNEXT_FRAMEDUMP_FRAMES','W3DNEXT_D3D11_LOG','W3DNEXT_D3D11_FRAMEDUMP','W3DNEXT_DX8_FRAMEDUMP','W3DNEXT_D3D11_MIPS') {
     Remove-Item "Env:\$e" -ErrorAction SilentlyContinue
   }
 

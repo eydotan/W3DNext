@@ -248,7 +248,7 @@ if(WIN32)
         # dereference the W3D handle classes (VertexBufferClass / ShaderClass /
         # VertexMaterialClass / TextureBaseClass ...). Deliberately NOT part of the
         # w3d_d3d11_smoke target (which links no ww3d2); the matching stubs in
-        # D3D11Backend.cpp are compiled out when ZP_D3D11_W3D_TU is defined (below).
+        # D3D11Backend.cpp are compiled out when W3DNEXT_D3D11_W3D_TU is defined (below).
         Backend/D3D11Backend_W3D.cpp
         Backend/D3D11FVF.cpp
         Backend/D3D11FVF.h
@@ -287,5 +287,5 @@ if(WIN32)
     # for those methods compile out - leaving exactly one definition per method in
     # the game link. The standalone w3d_d3d11_smoke target does NOT link this
     # interface library and never sees this define, so its stubs stay in place.
-    target_compile_definitions(corei_ww3d2 INTERFACE ZP_D3D11_W3D_TU=1)
+    target_compile_definitions(corei_ww3d2 INTERFACE W3DNEXT_D3D11_W3D_TU=1)
 endif()

@@ -1723,14 +1723,14 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 	// entries 1..MAX = swayFactor[type-1], exactly the DX8 indexing
 	// (vertex normal.x = swayType, 0 for none). Self-gated, DX8 untouched.
 	{
-		float zpSway[(MAX_SWAY_TYPES + 1) * 4] = { 0 };
+		float w3dNextSway[(MAX_SWAY_TYPES + 1) * 4] = { 0 };
 		Int zpi;
 		for (zpi = 0; zpi < MAX_SWAY_TYPES; zpi++) {
-			zpSway[(zpi + 1) * 4 + 0] = swayFactor[zpi].X;
-			zpSway[(zpi + 1) * 4 + 1] = swayFactor[zpi].Y;
-			zpSway[(zpi + 1) * 4 + 2] = swayFactor[zpi].Z;
+			w3dNextSway[(zpi + 1) * 4 + 0] = swayFactor[zpi].X;
+			w3dNextSway[(zpi + 1) * 4 + 1] = swayFactor[zpi].Y;
+			w3dNextSway[(zpi + 1) * 4 + 2] = swayFactor[zpi].Z;
 		}
-		RB_Mirror_Tree_Sway(true, zpSway, MAX_SWAY_TYPES + 1);
+		RB_Mirror_Tree_Sway(true, w3dNextSway, MAX_SWAY_TYPES + 1);
 	}
 
 	if (m_dwTreeVertexShader) {
