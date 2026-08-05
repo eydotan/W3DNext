@@ -622,6 +622,7 @@ private:
 	ID3D11ShaderResourceView * m_stageSRV[RB_MAX_TEXTURE_STAGES];
 	ID3D11SamplerState * m_stageSampler[RB_MAX_TEXTURE_STAGES];
 	TextureBaseClass * m_boundTextures[RB_MAX_TEXTURE_STAGES];
+	bool m_stageNeutral[RB_MAX_TEXTURE_STAGES]; // slot holds the neutral-white fallback (null Set_Texture)
 
 	// --- Uploaded-texture cache ---------------------------------------------
 	// Without this, Set_Texture LockRect'd the source surface and created a NEW

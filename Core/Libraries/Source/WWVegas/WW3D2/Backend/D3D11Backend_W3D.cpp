@@ -717,12 +717,25 @@ void D3D11Backend::Set_Texture(unsigned int stage, TextureBaseClass * texture)
 	// Mirror into the engine-side render_state record (see Set_Shader).
 	DX8Wrapper::Set_Texture(stage, texture);
 
-	if (stage < RB_MAX_TEXTURE_STAGES) {
-		m_boundTextures[stage] = texture;
-	}
-	if (texture == nullptr || stage >= RB_MAX_TEXTURE_STAGES) {
+	if (stage >= RB_MAX_TEXTURE_STAGES) {
 		return;
 	}
+	m_boundTextures[stage] = texture;
+	if (texture == nullptr) {
+		// A null bind must not leave the previous draw's SRV live in the slot:
+		// the combiner still samples slot texture whenever the shader's
+		// TEXTURING_ENABLE bit is set (Set_Shader programs MODULATE(TEXTURE,
+		// DIFFUSE) with no null-texture branch), so a stale SRV renders the
+		// WRONG texture. Bind the neutral-white fallback rather than a null
+		// SRV: D3D8's observed no-texture combiner behavior is "sample white"
+		// (multiplicative identity), while a D3D11 null SRV samples (0,0,0,0)
+		// - black geometry instead of untextured-lit geometry.
+		if (!m_stageNeutral[stage]) {
+			m_stageNeutral[stage] = Upload_Neutral_Texture(stage);
+		}
+		return;
+	}
+	m_stageNeutral[stage] = false;
 
 	IDirect3DBaseTexture8 * base = texture->Peek_D3D_Base_Texture();
 	if (base == nullptr) {

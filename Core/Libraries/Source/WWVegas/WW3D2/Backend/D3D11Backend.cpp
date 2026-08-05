@@ -226,6 +226,7 @@ D3D11Backend::D3D11Backend()
 		m_stageSRV[i] = nullptr;
 		m_stageSampler[i] = nullptr;
 		m_boundTextures[i] = nullptr;
+		m_stageNeutral[i] = false;
 		m_stageTexFormatLog[i] = 0;
 	}
 	m_captureTexture = nullptr;
@@ -668,6 +669,7 @@ void D3D11Backend::Release_Texture_Stages()
 		Safe_Release(m_stageSRV[i]);
 		Safe_Release(m_stageTexture[i]);
 		m_boundTextures[i] = nullptr;
+		m_stageNeutral[i] = false;
 	}
 }
 
