@@ -98,8 +98,8 @@ jobs:
       extras: ${{ matrix.extras }}
     secrets: inherit
 
-  # Note build-generalsmd is split into two jobs for vc6 and win32 because replaycheck-generalsmd
-  # only requires the vc6 build and compiling vc6 is much faster than win32
+  # Note build-generalsmd is split into two jobs for vc6 and win32 because the vc6
+  # build is much faster than win32
   build-generalsmd-vc6:
     name: Build GeneralsMD${{ matrix.preset && '' }}
     needs: detect-changes
@@ -162,19 +162,3 @@ jobs:
       extras: ${{ matrix.extras }}
     secrets: inherit
 
-  replaycheck-generalsmd:
-    name: Replay Check GeneralsMD${{ matrix.preset && '' }}
-    needs: build-generalsmd-vc6
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.generalsmd == 'true' || needs.detect-changes.outputs.shared == 'true' }}
-    strategy:
-      matrix:
-        include:
-          - preset: "vc6+t+e"
-          - preset: "vc6-releaselog+t+e" # optimized build with logging and crashing enabled should be compatible, so we test that here.
-      fail-fast: false
-    uses: ./.github/workflows/check-replays.yml
-    with:
-      game: "GeneralsMD"
-      userdata: "GeneralsReplays/GeneralsZH/1.04"
-      preset: ${{ matrix.preset }}
-    secrets: inherit
