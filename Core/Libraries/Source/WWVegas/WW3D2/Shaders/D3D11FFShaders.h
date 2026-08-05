@@ -148,7 +148,7 @@ static const char kFFVertexShaderHLSL[] =
 	"            }\n"
 	"        }\n"
 	"        float a = (DiffuseSource == 1u) ? input.color.a : MatDiffuse.a;\n"
-	"        diffuse = float4(col, a);\n"
+	"        diffuse = float4(saturate(col), a); // D3D8 clamps lit vertex colors before interpolation\n"
 	"    }\n"
 	"    output.color = diffuse;\n"
 	"    output.uv0 = input.uv0;\n"

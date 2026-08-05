@@ -172,7 +172,7 @@ VSOutput main(VSInput input)
 			}
 		}
 		float a = (DiffuseSource == 1u) ? input.color.a : MatDiffuse.a;
-		diffuse = float4(col, a);
+		diffuse = float4(saturate(col), a); // D3D8 clamps lit vertex colors before interpolation
 	}
 
 	output.color = diffuse;
