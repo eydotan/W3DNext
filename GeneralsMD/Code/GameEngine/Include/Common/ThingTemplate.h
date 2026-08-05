@@ -521,6 +521,9 @@ public:
   //-------------------------------------------------------------------------------------------------
   NameKeyType getMaxSimultaneousLinkKey() const { return m_maxSimultaneousLinkKey; }
   UnsignedInt getMaxSimultaneousOfType() const;
+  // W3DNext: true for superweapon structures whose limit is driven by the game's
+  // superweapon restriction (used to enforce the "No Superweapons" option).
+  Bool isSuperweaponRestricted() const { return m_maxSimultaneousDeterminedBySuperweaponRestriction; }
 
 	void validate();
 

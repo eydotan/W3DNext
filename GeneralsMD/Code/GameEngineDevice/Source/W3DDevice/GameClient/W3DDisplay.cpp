@@ -39,6 +39,24 @@ static void drawFramerateBar();
 #include <windows.h>
 #include <io.h>
 #include <time.h>
+// W3DNext: PNG screenshot encoder (IDAT deflate + CRC32), reachable via
+// core_compression. zlib's Byte type collides with the engine's own `Byte`
+// (typedef char, from BaseType.h in the PCH). The two zlib variants collide two
+// different ways, so we defuse both:
+//  - vcpkg zlib: zconf.h does `typedef unsigned char Byte;` -> a hard C2371
+//    redefinition. That typedef is guarded by `#if !defined(__MACTYPES__)`, while
+//    uInt/uLong sit outside the guard, so defining __MACTYPES__ across the include
+//    suppresses only the colliding Byte and leaves the types zlib.h needs intact.
+//  - bundled (Z_PREFIX) zlib: zconf.h does `#define Byte z_Byte` (object-like macro)
+//    that leaks into every later header (e.g. collapsing NetCommandMsg.h's
+//    Byte*/UnsignedByte* overloads) -> #undef it after the include.
+// We only need zlib's functions (deflate/crc32), not its Byte alias.
+#define __MACTYPES__
+#include <zlib.h>
+#undef __MACTYPES__
+#ifdef Byte
+#undef Byte
+#endif
 
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "Common/FramePacer.h"
@@ -100,10 +118,16 @@ static void drawFramerateBar();
 #include "WW3D2/meshmatdesc.h"
 #include "WW3D2/meshmdl.h"
 #include "WW3D2/rddesc.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "TARGA.h"
 
 #include "GameLogic/ScriptEngine.h"		// For TheScriptEngine - jkmcd
 #include "GameLogic/GameLogic.h"
+#include "Common/GameEngine.h"   // STRATAGEM auto-capture: TheGameEngine->setQuitting()
+#include "Common/PlayerList.h"   // STRATAGEM 2D heatmap: getLocalPlayer()
+#include "GameLogic/Stratagem/StratagemBrain.h"   // STRATAGEM 2D heatmap
+#include "GameLogic/Stratagem/StratagemTemplates.h"  // STRATAGEM emblem roster
+#include "GameClient/Image.h"    // STRATAGEM emblems: Image + TheMappedImageCollection
 #ifdef DUMP_PERF_STATS
 #include "GameLogic/PartitionManager.h"
 #endif
@@ -405,6 +429,8 @@ W3DDisplay::W3DDisplay()
 	for (i = 0; i < DisplayStringCount; i++)
 		m_displayStrings[i] = nullptr;
 
+	m_backendBadgeString = nullptr;
+
 	m_batchTexture = nullptr;
 	m_batchMode = DRAW_IMAGE_ALPHA;
 	m_batchGrayscale = FALSE;
@@ -437,6 +463,12 @@ W3DDisplay::~W3DDisplay()
 	// TheSuperHackers @fix Mauller/Tomsons26 28/04/2025 Free benchmark display string
 	if( m_benchmarkDisplayString ) {
 		TheDisplayStringManager->freeDisplayString(m_benchmarkDisplayString);
+	}
+
+	// W3DNext: free the backend-badge display string
+	if( m_backendBadgeString ) {
+		TheDisplayStringManager->freeDisplayString(m_backendBadgeString);
+		m_backendBadgeString = nullptr;
 	}
 
 	// delete 2D renderer
@@ -547,7 +579,7 @@ void W3DDisplay::setGamma(Real gamma, Real bright, Real contrast, Bool calibrate
 	if (m_windowed)
 		return;	//we don't allow gamma to change in window because it would affect desktop.
 
-	DX8Wrapper::Set_Gamma(gamma,bright,contrast,calibrate, false);
+	g_renderBackend->Set_Gamma(gamma,bright,contrast,calibrate, false);
 }
 
 /** Set resolution of display */
@@ -817,6 +849,12 @@ void W3DDisplay::init()
 		{
 			SortingRendererClass::SetMinVertexBufferSize(1);
 		}
+		// W3DNext renderer port (RENDERER_PORT.md step 10): choose the render
+		// backend BEFORE the device-dependent inits construct it. Default (flag off)
+		// keeps DX8Backend -> byte-identical default path; -gfxBackend d3d11 flips to
+		// D3D11Backend, which brings up its own device on ApplicationHWnd.
+		Set_Use_D3D11_Backend( TheGlobalData->m_gfxBackendD3D11 != FALSE );
+
 		if (WW3D::Init( ApplicationHWnd ) != WW3D_ERROR_OK)
 			throw ERROR_INVALID_D3D;	//failed to initialize.  User probably doesn't have DX 8.1
 
@@ -827,7 +865,10 @@ void W3DDisplay::init()
 		WW3D::Set_Screen_UV_Bias( TRUE );  ///< this makes text look good :)
 		WW3D::Set_Texture_Bitdepth(32);
 
-		setWindowed( TheGlobalData->m_windowed );
+		// W3DNext: borderless-fullscreen uses a *windowed* D3D device (no exclusive
+		// mode -> no D3D8 device-lost hang on Win11 alt-tab). The frameless desktop-sized
+		// window (set in initializeAppWindows) makes it look fullscreen.
+		setWindowed( TheGlobalData->m_windowed || TheGlobalData->m_borderless );
 
 		// create a 2D renderer helper
 		m_2DRender = NEW Render2DClass;
@@ -1631,6 +1672,66 @@ void W3DDisplay::drawDebugStats()
 
 }
 
+// W3DDisplay::drawBackendBadge ===============================================
+/** W3DNext renderer port: small label naming the active render backend
+	* ("DX8" or "D3D11"), so developers migrating DX8->D3D11 can always tell
+	* which backend is live. TOP-LEFT (user request 2026-07-28: dev windows are
+	* often larger than the monitor, so bottom/right UI gets clipped - top-left
+	* is the one corner always visible), below the dev stat/toast rows.
+	* Dev/harness builds only: retail (ZeroPowerDevMode off, no harness flag)
+	* renders nothing - the ship-gate NC checks for a clean corner. */
+//=============================================================================
+void W3DDisplay::drawBackendBadge()
+{
+	if( TheDisplayStringManager == nullptr || TheFontLibrary == nullptr )
+		return;
+
+	const Bool zpDev = TheGlobalData != nullptr && TheGlobalData->m_zpDevMode;
+	if( !zpDev && !TheZPUnattendedHarness )
+		return;
+
+	// Point size scales with the live display height so the badge stays legible
+	// at any resolution (~12pt at 800x600, ~28pt at 1440p). If the resolution
+	// changes mid-session, rebuild the string with the new size.
+	static Int badgeBuiltForHeight = 0;
+	Int pointSize = getHeight() / 50;
+	if( pointSize < 10 )
+		pointSize = 10;
+
+	if( m_backendBadgeString != nullptr && badgeBuiltForHeight != (Int)getHeight() )
+	{
+		TheDisplayStringManager->freeDisplayString( m_backendBadgeString );
+		m_backendBadgeString = nullptr;
+	}
+
+	if( m_backendBadgeString == nullptr )
+	{
+		GameFont *font = TheFontLibrary->getFont( "Arial", pointSize, TRUE );
+		if( font == nullptr )
+			font = TheFontLibrary->getFont( "FixedSys", 8, FALSE );
+		if( font == nullptr )
+			return;
+
+		m_backendBadgeString = TheDisplayStringManager->newDisplayString();
+		if( m_backendBadgeString == nullptr )
+			return;
+		m_backendBadgeString->setFont( font );
+		m_backendBadgeString->setText(
+			UnicodeString( Is_D3D11_Backend_Active() ? L"D3D11" : L"DX8" ) );
+		badgeBuiltForHeight = (Int)getHeight();
+	}
+
+	Int w, h;
+	m_backendBadgeString->getSize( &w, &h );
+	// top-left, below the dev stat/capture-toast rows (~2 text rows high) so
+	// neither overwrites the other; x margin keeps it off the window border.
+	Int x = 4;
+	Int y = 2*h + 6;
+	m_backendBadgeString->draw( x, y,
+		GameMakeColor( 255, 255, 255, 255 ),	// white text
+		GameMakeColor( 0, 0, 0, 255 ) );			// black drop shadow for contrast
+}
+
 // W3DDisplay::drawFPSStats =================================================
 /** Draw the FPS on the screen */
 //=============================================================================
@@ -1780,6 +1881,66 @@ void W3DDisplay::step()
 }
 
 //DECLARE_PERF_TIMER(BigAssRenderLoop)
+
+#if defined(RTS_DEBUG)
+// Project STRATAGEM: register (once) and draw the 5 base-template emblems as a 2D
+// roster strip, loading the real TGA assets through the engine's image system
+// (TheMappedImageCollection + drawImage). Proves the emblems load + render in-engine.
+static void stratagemDrawRoster( W3DDisplay *disp )
+{
+	if (TheMappedImageCollection == nullptr)
+		return;
+
+	static Bool s_registered = FALSE;
+	if (!s_registered)
+	{
+		s_registered = TRUE;
+		for (Int i = 0; i < StratagemGetBaseTemplateCount(); ++i)
+		{
+			const StratagemProfile *t = StratagemGetBaseTemplateByIndex( i );
+			if (t == nullptr)
+				continue;
+			AsciiString imgName;
+			imgName.format( "StratagemEmblem_%s", t->baseTemplateId.str() );
+			if (TheMappedImageCollection->findImageByName( imgName ) != nullptr)
+				continue;
+			// asset filename: lowercased template name, e.g. Vanguard -> stratagem_vanguard.tga
+			char lower[64];
+			const char *nm = t->name.str();
+			Int k = 0;
+			for (; nm[k] && k < 63; ++k)
+				lower[k] = (char)tolower( (unsigned char)nm[k] );
+			lower[k] = 0;
+			AsciiString file;
+			file.format( "stratagem_%s.tga", lower );
+			Image *img = newInstance( Image );
+			img->setName( imgName );
+			img->setFilename( file );
+			Region2D uv;
+			uv.lo.x = 0.0f; uv.lo.y = 0.0f; uv.hi.x = 1.0f; uv.hi.y = 1.0f;
+			img->setUV( &uv );
+			TheMappedImageCollection->addImage( img );
+		}
+	}
+
+	const Int EM = 48, GAP = 10, X0 = 24, Y0 = 24, N = StratagemGetBaseTemplateCount();
+	disp->drawFillRect( X0 - 6, Y0 - 6, (EM + GAP) * N + 6, EM + 12, 0xC0101018 );  // backdrop
+	for (Int i = 0; i < N; ++i)
+	{
+		const StratagemProfile *t = StratagemGetBaseTemplateByIndex( i );
+		if (t == nullptr)
+			continue;
+		AsciiString imgName;
+		imgName.format( "StratagemEmblem_%s", t->baseTemplateId.str() );
+		const Image *img = TheMappedImageCollection->findImageByName( imgName );
+		if (img != nullptr)
+		{
+			Int x = X0 + i * (EM + GAP);
+			disp->drawImage( img, x, Y0, x + EM, Y0 + EM, 0xFFFFFFFFu );   // mode defaults to alpha
+		}
+	}
+}
+#endif
 
 // W3DDisplay::draw ===========================================================
 /** Draw the entire W3D Display */
@@ -1987,6 +2148,10 @@ AGAIN:
 				// draw all views of the world
 				drawViews();
 
+				// GPU profile phase cut: everything from frame begin to here is
+				// the 3D world (terrain markers subdivide it); ui follows.
+				g_renderBackend->Gpu_Profile_Marker("3d");
+
 				// draw the user interface
 				TheInGameUI->DRAW();
 
@@ -1995,6 +2160,8 @@ AGAIN:
 				// draw the mouse
 				if( TheMouse )
 					TheMouse->DRAW();
+
+				g_renderBackend->Gpu_Profile_Marker("ui");
 
 				if ( m_videoStream && m_videoBuffer )
 				{
@@ -2011,6 +2178,29 @@ AGAIN:
 				}
 				// render letter box before debug display so debug info isn't hidden
 				renderLetterBox(now);
+
+				// W3DNext: dev/harness backend badge (top-left), after the
+				// letterbox so it stays visible during cinematics too.
+				drawBackendBadge();
+
+				// W3DNext renderer port: -zpBWFilter <logicframe> - engage the
+				// mission BW screen filter deterministically once game logic
+				// reaches that frame (mirrors ScriptActions::doBlackWhiteMode; the
+				// screen-filter A/B oracle's trigger).
+				{
+					static Bool zpBWFilterFired = FALSE;
+					if (!zpBWFilterFired
+							&& TheGlobalData->m_zpBWFilterAtFrame > 0
+							&& TheGameLogic != nullptr && TheGameLogic->isInGame()
+							&& TheGameLogic->getFrame() >= (UnsignedInt)TheGlobalData->m_zpBWFilterAtFrame
+							&& TheTacticalView != nullptr)
+					{
+						zpBWFilterFired = TRUE;
+						TheTacticalView->setViewFilterMode(FM_VIEW_BW_BLACK_AND_WHITE);
+						TheTacticalView->setViewFilter(FT_VIEW_BW_FILTER);
+						TheTacticalView->setFadeParameters(30, 1);
+					}
+				}
 
 				// display cinematicText over the black
 				if( m_cinematicText != AsciiString::TheEmptyString && m_cinematicTextFrames != 0)
@@ -2073,8 +2263,59 @@ AGAIN:
 					m_profilerFrameCapture->Capture(getWidth(), getHeight());
 				}
 #endif
+				// Project STRATAGEM auto-capture: decide whether to shoot this frame, and if
+				// so draw a 2D screen-space mini-heatmap of the influence map BEFORE
+				// End_Render (so it is part of the finalized frame, like the framerate bar).
+				// 2D draws land in the back buffer; the 3D debug-icon overlay uses a static
+				// sort list the back-buffer grab misses. Capture happens AFTER End_Render.
+				// The sample SCHEDULE, the deterministic signature, and the quit-after-N now
+				// live logic-side in StratagemBrain::update() so the harness works under
+				// -headless (this whole draw() returns early when headless). Here we only do
+				// the windowed extras on the brain's chosen sample frames: the 2D mini-heatmap
+				// (drawn into the back buffer before End_Render) and the screenshot after.
+				Bool stratShotNow = (TheGlobalData->m_stratagemShot && TheStratagemBrain != nullptr
+						&& TheStratagemBrain->captureThisFrame());
+				if (stratShotNow)
+				{
+					if (ThePlayerList != nullptr)
+					{
+						const StratagemInfluenceMap *im = TheStratagemBrain->getInfluenceMap();
+						Player *me = ThePlayerList->getLocalPlayer();
+						if (im != nullptr && im->isInitialized() && me != nullptr)
+						{
+							Int gw = im->getGridWidth(), gh = im->getGridHeight(), cx, cy;
+							Real maxAbs = 1.0f;
+							for (cy = 0; cy < gh; ++cy) for (cx = 0; cx < gw; ++cx) {
+								Real v = im->debugGetCellControl(me, cx, cy);
+								Real a = (v < 0.0f) ? -v : v;
+								if (a > maxAbs) maxAbs = a;
+							}
+							const Int cellPx = 7;
+							Int ox = getWidth() - gw*cellPx - 24, oy = 56;
+							drawFillRect(ox-3, oy-3, gw*cellPx+6, gh*cellPx+6, 0xC0101018);  // backdrop
+							for (cy = 0; cy < gh; ++cy) for (cx = 0; cx < gw; ++cx) {
+								Real control = im->debugGetCellControl(me, cx, cy);
+								if (control == 0.0f) continue;
+								Real inten = ((control < 0.0f) ? -control : control) / maxAbs;
+								if (inten > 1.0f) inten = 1.0f;
+								Int chan = (Int)(inten * 255.0f);
+								UnsignedInt color = (control > 0.0f) ? (0xFF000000u | (UnsignedInt)chan)             // blue = we control
+																	 : (0xFF000000u | ((UnsignedInt)chan << 16));   // red = enemy
+								drawFillRect(ox + cx*cellPx, oy + cy*cellPx, cellPx, cellPx, color);
+							}
+						}
+					}
+#if defined(RTS_DEBUG)
+					stratagemDrawRoster( this );   // STRATAGEM: the 5 emblem TGAs, in-engine
+#endif
+				}
+				// GPU profile phase cut: ui..here is the 2D tail (letterbox,
+				// badge, debug overlays); End_Render internals follow.
+				g_renderBackend->Gpu_Profile_Marker("tail2d");
 				// render is all done!
 				WW3D::End_Render();
+				if (stratShotNow)
+					takeScreenShot();   // signature + quit are emitted logic-side (StratagemBrain)
 			}
 			else
 			{
@@ -3123,26 +3364,155 @@ static void CreateBMPFile(LPTSTR pszFile, char *image, Int width, Int height)
 	LocalFree( (HLOCAL) pbmi);
 }
 
+//-------------------------------------------------------------------------------------------------
+// W3DNext: minimal 24-bit truecolor PNG writer.
+// 'imageRGB' is top-down, 3 bytes/pixel in R,G,B order (the same buffer the targa
+// path builds), so no vertical flip is needed. zlib (linked via core_compression)
+// supplies the IDAT deflate stream and the CRC32. We call the *unprefixed* zlib
+// names so one source works in every preset: the bundled zlib (vc6/win32) is built
+// with Z_PREFIX and zlib.h remaps them to z_*, while vcpkg's zlib uses them as-is.
+//-------------------------------------------------------------------------------------------------
+static void pngPutBE32(BYTE *p, unsigned long v)
+{
+	p[0] = (BYTE)(v >> 24);
+	p[1] = (BYTE)(v >> 16);
+	p[2] = (BYTE)(v >> 8);
+	p[3] = (BYTE)(v);
+}
+
+static void pngWriteChunk(HANDLE hf, const char *type, const BYTE *data, unsigned long len)
+{
+	DWORD dwTmp;
+	BYTE head[8];
+	pngPutBE32(head, len);
+	head[4] = (BYTE)type[0]; head[5] = (BYTE)type[1]; head[6] = (BYTE)type[2]; head[7] = (BYTE)type[3];
+	WriteFile(hf, head, 8, &dwTmp, nullptr);
+	if (len > 0)
+		WriteFile(hf, data, (DWORD)len, &dwTmp, nullptr);
+
+	// CRC covers the chunk type + data (not the length).
+	uLong crc = crc32(0L, (const Bytef *)0, 0);
+	crc = crc32(crc, (const Bytef *)(head + 4), 4);
+	if (len > 0)
+		crc = crc32(crc, (const Bytef *)data, len);
+	BYTE crcbuf[4];
+	pngPutBE32(crcbuf, (unsigned long)crc);
+	WriteFile(hf, crcbuf, 4, &dwTmp, nullptr);
+}
+
+static void CreatePNGFile(LPCSTR pszFile, const char *imageRGB, Int width, Int height)
+{
+	const unsigned long rowBytes = (unsigned long)width * 3;
+	const unsigned long rawLen = (unsigned long)height * (rowBytes + 1);
+
+	// Filtered scanlines: each row is prefixed with a filter-type byte (0 = none).
+	BYTE *raw = NEW BYTE[rawLen];
+	Int y;
+	for (y = 0; y < height; y++)
+	{
+		BYTE *dst = raw + (unsigned long)y * (rowBytes + 1);
+		*dst++ = 0;	// filter: none
+		memcpy(dst, imageRGB + (unsigned long)y * rowBytes, rowBytes);
+	}
+
+	// Deflate -> zlib stream, which is exactly the PNG IDAT payload. zlib 1.1.4 has
+	// no compressBound, so size the destination with the classic deflate upper bound.
+	uLong compCap = rawLen + (rawLen >> 12) + (rawLen >> 14) + 11;
+	BYTE *comp = NEW BYTE[compCap];
+	uLongf compLen = compCap;
+	int zerr = compress((Bytef *)comp, &compLen, (const Bytef *)raw, rawLen);
+	delete [] raw;
+	if (zerr != Z_OK)
+	{
+		delete [] comp;
+		return;
+	}
+
+	HANDLE hf = CreateFile(pszFile, GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+		CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (hf != INVALID_HANDLE_VALUE)
+	{
+		DWORD dwTmp;
+		static const BYTE pngSig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+		WriteFile(hf, pngSig, 8, &dwTmp, nullptr);
+
+		BYTE ihdr[13];
+		pngPutBE32(ihdr + 0, (unsigned long)width);
+		pngPutBE32(ihdr + 4, (unsigned long)height);
+		ihdr[8]  = 8;	// bit depth
+		ihdr[9]  = 2;	// color type: 2 = truecolor RGB
+		ihdr[10] = 0;	// compression method: deflate
+		ihdr[11] = 0;	// filter method: adaptive
+		ihdr[12] = 0;	// interlace: none
+		pngWriteChunk(hf, "IHDR", ihdr, 13);
+		pngWriteChunk(hf, "IDAT", comp, compLen);
+		pngWriteChunk(hf, "IEND", (const BYTE *)0, 0);
+		CloseHandle(hf);
+	}
+	delete [] comp;
+}
+
 ///Save Screen Capture to a file
 void W3DDisplay::takeScreenShot()
 {
 	char leafname[256];
 	char pathname[1024];
+	char dirname[1024];
 
 	static int frame_number = 1;
 
+	// W3DNext: write screenshots to the project's scrshots folder when a launcher
+	// has exported W3DNEXT_SCRSHOTS (a path ending in a separator); otherwise fall
+	// back to the original user-data location.
+	const char *scrDir = getenv("W3DNEXT_SCRSHOTS");
+	if (scrDir != nullptr && scrDir[0] != '\0')
+	{
+		CreateDirectoryA(scrDir, nullptr);	// ensure it exists (no-op if already present)
+		strlcpy(dirname, scrDir, ARRAY_SIZE(dirname));
+	}
+	else
+	{
+		strlcpy(dirname, TheGlobalData->getPath_UserData().str(), ARRAY_SIZE(dirname));
+	}
+
 	Bool done = false;
 	while (!done) {
-#ifdef CAPTURE_TO_TARGA
-		sprintf( leafname, "%s%.3d.tga", "sshot", frame_number++);
+#if defined(CAPTURE_TO_TARGA)
+		sprintf( leafname, "%s%.3d.tga", "zp_screenshot_", frame_number++);
+#elif defined(CAPTURE_TO_BMP)
+		sprintf( leafname, "%s%.3d.bmp", "zp_screenshot_", frame_number++);
 #else
-		sprintf( leafname, "%s%.3d.bmp", "sshot", frame_number++);
+		sprintf( leafname, "%s%.3d.png", "zp_screenshot_", frame_number++);	// W3DNext: PNG by default
 #endif
-		strlcpy(pathname, TheGlobalData->getPath_UserData().str(), ARRAY_SIZE(pathname));
+		strlcpy(pathname, dirname, ARRAY_SIZE(pathname));
 		strlcat(pathname, leafname, ARRAY_SIZE(pathname));
 		if (_access( pathname, 0 ) == -1)
 			done = true;
 	}
+
+#if !defined(CAPTURE_TO_TARGA) && !defined(CAPTURE_TO_BMP)
+	// W3DNext: on a backend with CPU readback (D3D11) capture through it —
+	// the legacy path below reads the dead D3D8 device under D3D11 and wrote
+	// pure-black PNGs. Readback is top-down RGB24, exactly what CreatePNGFile
+	// consumes.
+	{
+		unsigned int rbW = 0, rbH = 0;
+		if (g_renderBackend != nullptr && g_renderBackend->Read_Back_Buffer(nullptr, rbW, rbH) && rbW != 0 && rbH != 0)
+		{
+			unsigned char *rbImage = NEW unsigned char[3*rbW*rbH];
+			if (g_renderBackend->Read_Back_Buffer(rbImage, rbW, rbH))
+			{
+				CreatePNGFile(pathname, (char *)rbImage, rbW, rbH);
+				delete [] rbImage;
+				UnicodeString rbFileName;
+				rbFileName.translate(leafname);
+				TheInGameUI->message(TheGameText->fetch("GUI:ScreenCapture"), rbFileName.str());
+				return;
+			}
+			delete [] rbImage;
+		}
+	}
+#endif
 
 	// TheSuperHackers @bugfix xezon 21/05/2025 Get the back buffer and create a copy of the surface.
 	// Originally this code took the front buffer and tried to lock it. This does not work when the
@@ -3177,38 +3547,7 @@ void W3DDisplay::takeScreenShot()
 	height = surfaceDesc.Height;
 
 	char *image=NEW char[3*width*height];
-#ifdef CAPTURE_TO_TARGA
-	//bytes are mixed in targa files, not rgb order.
-	for (y=0; y<height; y++)
-	{
-		for (x=0; x<width; x++)
-		{
-			// index for image
-			index=3*(x+y*width);
-			// index for fb
-			index2=y*lrect.Pitch+4*x;
-
-			image[index]=*((char *) lrect.pBits + index2+2);
-			image[index+1]=*((char *) lrect.pBits + index2+1);
-			image[index+2]=*((char *) lrect.pBits + index2+0);
-		}
-	}
-
-	surfaceCopy->Unlock();
-	surfaceCopy->Release_Ref();
-	surfaceCopy = nullptr;
-
-	Targa targ;
-	memset(&targ.Header,0,sizeof(targ.Header));
-	targ.Header.Width=width;
-	targ.Header.Height=height;
-	targ.Header.PixelDepth=24;
-	targ.Header.ImageType=TGA_TRUECOLOR;
-	targ.SetImage(image);
-	targ.YFlip();
-
-	targ.Save(pathname,TGAF_IMAGE,false);
-#else	//capturing to bmp file
+#if defined(CAPTURE_TO_BMP)
 	//bmp is same byte order
 	for (y=0; y<height; y++)
 	{
@@ -3252,6 +3591,43 @@ void W3DDisplay::takeScreenShot()
 			}
 	}
 	CreateBMPFile(pathname, image, width, height);
+#else
+	// Targa and PNG both want R,G,B byte order; the D3D back buffer is B,G,R,A.
+	for (y=0; y<height; y++)
+	{
+		for (x=0; x<width; x++)
+		{
+			// index for image
+			index=3*(x+y*width);
+			// index for fb
+			index2=y*lrect.Pitch+4*x;
+
+			image[index]=*((char *) lrect.pBits + index2+2);
+			image[index+1]=*((char *) lrect.pBits + index2+1);
+			image[index+2]=*((char *) lrect.pBits + index2+0);
+		}
+	}
+
+	surfaceCopy->Unlock();
+	surfaceCopy->Release_Ref();
+	surfaceCopy = nullptr;
+
+#if defined(CAPTURE_TO_TARGA)
+	Targa targ;
+	memset(&targ.Header,0,sizeof(targ.Header));
+	targ.Header.Width=width;
+	targ.Header.Height=height;
+	targ.Header.PixelDepth=24;
+	targ.Header.ImageType=TGA_TRUECOLOR;
+	targ.SetImage(image);
+	targ.YFlip();
+
+	targ.Save(pathname,TGAF_IMAGE,false);
+#else
+	// W3DNext default: PNG. The back buffer is top-down and 'image' is already
+	// R,G,B, so it maps straight onto PNG scanlines (no vertical flip needed).
+	CreatePNGFile(pathname, image, width, height);
+#endif
 #endif
 
 	delete [] image;

@@ -84,6 +84,7 @@
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/light.h"
 #include "WW3D2/scene.h"
 #include "W3DDevice/GameClient/W3DPoly.h"
@@ -1893,6 +1894,10 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 {
 	//USE_PERF_TIMER(Terrain_Render)
 
+	// GPU profile span: terrain_in..terrain (RAII - this method has early
+	// returns). Cost between the two markers is the terrain draw itself.
+	RenderBackendGpuSpan gpuSpan("terrain_in", "terrain");
+
 	Int i,j,devicePasses;
 	W3DShaderManager::ShaderTypes st;
 	const Bool doCloud = useCloud();
@@ -1938,20 +1943,20 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	}
 #endif
 
-	DX8Wrapper::Set_Light_Environment(rinfo.light_environment);
+	g_renderBackend->Set_Light_Environment(rinfo.light_environment);
 
 	// Force shaders to update.
 	m_stageTwoTexture->restore();
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
+	g_renderBackend->Set_Texture(0,nullptr);
+	g_renderBackend->Set_Texture(1,nullptr);
 	ShaderClass::Invalidate();
 
 	//	tm.Scale(ObjSpaceExtent);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,tm);
 
 	//Apply the shader and material
 
-	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
+	g_renderBackend->Set_Index_Buffer(m_indexBuffer,0);
 
 	Bool doMultiPassWireFrame=FALSE;
 
@@ -1975,11 +1980,11 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			else
 			{	//wireframe pass
 				//Set to vertex diffuse lighting
-				DX8Wrapper::Set_Material(m_vertexMaterialClass);
+				g_renderBackend->Set_Material(m_vertexMaterialClass);
 				//Set shader to non-textured solid color from vertex
-				DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueSolidShader);
+				g_renderBackend->Set_Shader(ShaderClass::_PresetOpaqueSolidShader);
 				devicePasses=1;	//one pass solid, next in wireframe.
-				DX8Wrapper::Apply_Render_State_Changes();
+				g_renderBackend->Apply_Render_State_Changes();
 				DX8Wrapper::Set_DX8_Texture_Stage_State( 0, D3DTSS_COLORARG2, D3DTA_TFACTOR );
 				DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR,0xff808080);
 				doMultiPassWireFrame=TRUE;
@@ -1990,8 +1995,8 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	}
 	else
 	{
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Shader(m_shaderClass);
+		g_renderBackend->Set_Material(m_vertexMaterialClass);
+		g_renderBackend->Set_Shader(m_shaderClass);
 
  		st=W3DShaderManager::ST_TERRAIN_BASE; //set default shader
 
@@ -2040,8 +2045,8 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		if (!doMultiPassWireFrame)	//multi-pass wireframe doesn't use regular shaders.
 		{
  			if (m_disableTextures ) {
- 				DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaque2DShader);
- 				DX8Wrapper::Set_Texture(0,nullptr);
+ 				g_renderBackend->Set_Shader(ShaderClass::_PresetOpaque2DShader);
+ 				g_renderBackend->Set_Texture(0,nullptr);
    			} else {
  				W3DShaderManager::setShader(st, pass);
 			}
@@ -2050,17 +2055,17 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		for (j=0; j<m_numVBTilesY; j++)
 			for (i=0; i<m_numVBTilesX; i++)
 			{
-				DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
+				g_renderBackend->Set_Vertex_Buffer(getVertexBufferTile(i, j));
 #ifdef PRE_TRANSFORM_VERTEX
 				if (m_xformedVertexBuffer && pass==0) {
 					// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-					DX8Wrapper::Apply_Render_State_Changes();
+					g_renderBackend->Apply_Render_State_Changes();
 					int code = DX8Wrapper::_Get_D3D_Device8()->ProcessVertices(0, 0, numVertex, m_xformedVertexBuffer[j*m_numVBTilesX+i], 0);
 					::OutputDebugString("did process vertex\n");
 				}
 				if (m_xformedVertexBuffer) {
 					// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-					DX8Wrapper::Apply_Render_State_Changes();
+					g_renderBackend->Apply_Render_State_Changes();
 					DX8Wrapper::_Get_D3D_Device8()->SetStreamSource(
 						0,
 						m_xformedVertexBuffer[j*m_numVBTilesX+i],
@@ -2069,7 +2074,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 				}
 #endif
 				if (Is_Hidden() == 0) {
-					DX8Wrapper::Draw_Triangles(0, HEIGHTMAP_POLYGON_NUM, 0, HEIGHTMAP_VERTEX_NUM);
+					g_renderBackend->Draw_Triangles(0, HEIGHTMAP_POLYGON_NUM, 0, HEIGHTMAP_VERTEX_NUM);
 				}
 
 			}
@@ -2093,20 +2098,20 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		Int xCoordMax = m_x+m_map->getDrawOrgX()-1;
 	#ifdef TEST_CUSTOM_EDGING
 		// Draw edging just before last pass.
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
+		g_renderBackend->Set_Texture(0,nullptr);
+		g_renderBackend->Set_Texture(1,nullptr);
 		m_stageTwoTexture->restore();
 		m_customEdging->drawEdging(m_map, xCoordMin, xCoordMax, yCoordMin, yCoordMax,
 			m_stageZeroTexture, doCloud?m_stageTwoTexture: nullptr, TheGlobalData->m_useLightMap?m_stageThreeTexture: nullptr);
 	#endif
 	#ifdef DO_ROADS
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
+		g_renderBackend->Set_Texture(0,nullptr);
+		g_renderBackend->Set_Texture(1,nullptr);
 		m_stageTwoTexture->restore();
 
 		ShaderClass::Invalidate();
 		if (!ShaderClass::Is_Backface_Culling_Inverted()) {
-			DX8Wrapper::Set_Material(m_vertexMaterialClass);
+			g_renderBackend->Set_Material(m_vertexMaterialClass);
 			if (Scene) {
 				RTS3DScene *pMyScene = (RTS3DScene *)Scene;
 				RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
@@ -2119,8 +2124,8 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		m_propBuffer->drawProps(rinfo);
 	}
 	#ifdef DO_SCORCH
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
+		g_renderBackend->Set_Texture(0,nullptr);
+		g_renderBackend->Set_Texture(1,nullptr);
 		m_stageTwoTexture->restore();
 
 		ShaderClass::Invalidate();
@@ -2128,11 +2133,11 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			drawScorches();
 		}
 	#endif
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Set_Texture(1,nullptr);
+		g_renderBackend->Set_Texture(0,nullptr);
+		g_renderBackend->Set_Texture(1,nullptr);
 		m_stageTwoTexture->restore();
 		ShaderClass::Invalidate();
-		DX8Wrapper::Apply_Render_State_Changes();
+		g_renderBackend->Apply_Render_State_Changes();
 
 		m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, doCloud?m_stageTwoTexture:nullptr);
 
@@ -2147,7 +2152,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		}
 
 		ShaderClass::Invalidate();
-		DX8Wrapper::Apply_Render_State_Changes();
+		g_renderBackend->Apply_Render_State_Changes();
 	}
 	else
 			m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, m_stageTwoTexture);
@@ -2158,11 +2163,11 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	m_bibBuffer->renderBibs();
 
 	// We do some custom blending, so tell the shader class to reset everything.
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
+	g_renderBackend->Set_Texture(0,nullptr);
+	g_renderBackend->Set_Texture(1,nullptr);
 	m_stageTwoTexture->restore();
 	ShaderClass::Invalidate();
-	DX8Wrapper::Set_Material(nullptr);
+	g_renderBackend->Set_Material(nullptr);
 
 }
 
@@ -2171,26 +2176,26 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 ///Performs additional terrain rendering pass, blending in the black shroud texture.
 void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 {
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D(true));
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,Matrix3D(true));
 
 	//Apply the shader and material
 
-	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
+	g_renderBackend->Set_Index_Buffer(m_indexBuffer,0);
 
 	for (Int j=0; j<m_numVBTilesY; j++)
 		for (Int i=0; i<m_numVBTilesX; i++)
 		{
-			DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
+			g_renderBackend->Set_Vertex_Buffer(getVertexBufferTile(i, j));
 #ifdef PRE_TRANSFORM_VERTEX
 			if (m_xformedVertexBuffer && pass==0) {
 				// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-				DX8Wrapper::Apply_Render_State_Changes();
+				g_renderBackend->Apply_Render_State_Changes();
 				int code = DX8Wrapper::_Get_D3D_Device8()->ProcessVertices(0, 0, numVertex, m_xformedVertexBuffer[j*m_numVBTilesX+i], 0);
 				::OutputDebugString("did process vertex\n");
 			}
 			if (m_xformedVertexBuffer) {
 				// Note - m_xformedVertexBuffer should only be used for non T&L hardware.  jba.
-				DX8Wrapper::Apply_Render_State_Changes();
+				g_renderBackend->Apply_Render_State_Changes();
 				DX8Wrapper::_Get_D3D_Device8()->SetStreamSource(
 					0,
 					m_xformedVertexBuffer[j*m_numVBTilesX+i],
@@ -2199,7 +2204,7 @@ void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 			}
 #endif
 			if (Is_Hidden() == 0) {
-				DX8Wrapper::Draw_Triangles(0, HEIGHTMAP_POLYGON_NUM, 0, HEIGHTMAP_VERTEX_NUM);
+				g_renderBackend->Draw_Triangles(0, HEIGHTMAP_POLYGON_NUM, 0, HEIGHTMAP_VERTEX_NUM);
 			}
 		}
 }
@@ -2357,23 +2362,23 @@ void HeightMapRenderObjClass::renderExtraBlendTiles()
 			maxBlendTiles += 16;	//enlarge by 16 to reduce trashing.
 
 		ShaderClass::Invalidate();	//invalidate to force shader to reset since we directly changed states
-		DX8Wrapper::Set_Index_Buffer(ib_access,0);
-		DX8Wrapper::Set_Vertex_Buffer(vb_access);
+		g_renderBackend->Set_Index_Buffer(ib_access,0);
+		g_renderBackend->Set_Vertex_Buffer(vb_access);
 		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(vmat);
+		g_renderBackend->Set_Material(vmat);
 		REF_PTR_RELEASE(vmat);
 		ShaderClass shader=ShaderClass::_PresetOpaqueShader;
 		shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_DISABLE);	//disable writes to z
-		DX8Wrapper::Set_Shader(shader);
+		g_renderBackend->Set_Shader(shader);
 
 		if (TheGlobalData->m_use3WayTerrainBlends == 2)
 		{
 			shader.Set_Primary_Gradient(ShaderClass::GRADIENT_DISABLE);	//disable lighting.
 			shader.Set_Texturing(ShaderClass::TEXTURING_DISABLE);		//disable texturing.
-			DX8Wrapper::Set_Shader(shader);
-			DX8Wrapper::Set_Texture(0,nullptr);	//debug mode which draws terrain tiles in white.
+			g_renderBackend->Set_Shader(shader);
+			g_renderBackend->Set_Texture(0,nullptr);	//debug mode which draws terrain tiles in white.
 			if (Is_Hidden() == 0) {
-				DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
+				g_renderBackend->Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
 				m_numVisibleExtraBlendTiles += indexCount/6;
 			}
 		}
@@ -2406,7 +2411,7 @@ void HeightMapRenderObjClass::renderExtraBlendTiles()
 			{
 				W3DShaderManager::setShader(st, pass);
 				if (Is_Hidden() == 0) {
-					DX8Wrapper::Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
+					g_renderBackend->Draw_Triangles(	0,indexCount/3, 0,	vertexCount);	//draw a quad, 2 triangles, 4 verts
 					m_numVisibleExtraBlendTiles += indexCount/6;
 				}
 			}

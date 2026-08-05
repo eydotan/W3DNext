@@ -83,6 +83,7 @@
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/light.h"
 #include "WW3D2/scene.h"
 #include "W3DDevice/GameClient/W3DPoly.h"
@@ -458,6 +459,10 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 {
 	//USE_PERF_TIMER(Terrain_Render)
 
+	// GPU profile span: terrain_in..terrain (same labels as the HeightMap
+	// renderer - only one terrain implementation runs per session).
+	RenderBackendGpuSpan gpuSpan("terrain_in", "terrain");
+
 	Int devicePasses;
 	W3DShaderManager::ShaderTypes st;
 	const Bool doCloud = useCloud();
@@ -487,20 +492,20 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	}
 #endif
 
-	DX8Wrapper::Set_Light_Environment(rinfo.light_environment);
+	g_renderBackend->Set_Light_Environment(rinfo.light_environment);
 
 	// Force shaders to update.
 	m_stageTwoTexture->restore();
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
+	g_renderBackend->Set_Texture(0,nullptr);
+	g_renderBackend->Set_Texture(1,nullptr);
 	ShaderClass::Invalidate();
 
 	//	tm.Scale(ObjSpaceExtent);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,tm);
 
 
-	DX8Wrapper::Set_Material(m_vertexMaterialClass);
-	DX8Wrapper::Set_Shader(m_shaderClass);
+	g_renderBackend->Set_Material(m_vertexMaterialClass);
+	g_renderBackend->Set_Shader(m_shaderClass);
 
  	st=W3DShaderManager::ST_FLAT_TERRAIN_BASE; //set default shader
 
@@ -550,8 +555,8 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
  	for (pass=0; pass<devicePasses; pass++) {
 		Bool disableTex = m_disableTextures;
 		if (m_disableTextures ) {
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaque2DShader);
-			DX8Wrapper::Set_Texture(0,nullptr);
+			g_renderBackend->Set_Shader(ShaderClass::_PresetOpaque2DShader);
+			g_renderBackend->Set_Texture(0,nullptr);
 		} else {
 			W3DShaderManager::setShader(st, pass);
 		}
@@ -590,13 +595,13 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	renderShoreLines(&rinfo.Camera);
 
 #ifdef DO_ROADS
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
+	g_renderBackend->Set_Texture(0,nullptr);
+	g_renderBackend->Set_Texture(1,nullptr);
 	m_stageTwoTexture->restore();
 
 	ShaderClass::Invalidate();
 	if (!ShaderClass::Is_Backface_Culling_Inverted()) {
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
+		g_renderBackend->Set_Material(m_vertexMaterialClass);
 		if (Scene) {
 			RTS3DScene *pMyScene = (RTS3DScene *)Scene;
 			RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
@@ -607,8 +612,8 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 #endif
 
 #ifdef DO_SCORCH
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
+	g_renderBackend->Set_Texture(0,nullptr);
+	g_renderBackend->Set_Texture(1,nullptr);
 	m_stageTwoTexture->restore();
 
 	ShaderClass::Invalidate();
@@ -616,11 +621,11 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		drawScorches();
 	}
 #endif
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
+	g_renderBackend->Set_Texture(0,nullptr);
+	g_renderBackend->Set_Texture(1,nullptr);
 	m_stageTwoTexture->restore();
 	ShaderClass::Invalidate();
-	DX8Wrapper::Apply_Render_State_Changes();
+	g_renderBackend->Apply_Render_State_Changes();
 
 	m_bridgeBuffer->drawBridges(&rinfo.Camera, m_disableTextures, m_stageTwoTexture);
 
@@ -628,18 +633,18 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		TheTerrainTracksRenderObjClassSystem->flush();
 
 	ShaderClass::Invalidate();
-	DX8Wrapper::Apply_Render_State_Changes();
+	g_renderBackend->Apply_Render_State_Changes();
 
 	m_waypointBuffer->drawWaypoints(rinfo);
 
 	m_bibBuffer->renderBibs();
 #endif
 	// We do some custom blending, so tell the shader class to reset everything.
-	DX8Wrapper::Set_Texture(0,nullptr);
-	DX8Wrapper::Set_Texture(1,nullptr);
+	g_renderBackend->Set_Texture(0,nullptr);
+	g_renderBackend->Set_Texture(1,nullptr);
 	m_stageTwoTexture->restore();
 	ShaderClass::Invalidate();
-	DX8Wrapper::Set_Material(nullptr);
+	g_renderBackend->Set_Material(nullptr);
 
 }
 

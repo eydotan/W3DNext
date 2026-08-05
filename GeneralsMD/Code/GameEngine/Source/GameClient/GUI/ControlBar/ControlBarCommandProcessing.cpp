@@ -50,6 +50,7 @@
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/InGameUI.h"
+#include "GameClient/Keyboard.h"
 #include "GameClient/AnimateWindowManager.h"
 
 #include "GameLogic/GameLogic.h"
@@ -395,6 +396,59 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 			DEBUG_ASSERTCRASH( whatToBuild, ("Undefined BUILD command for object '%s'",
 												 commandButton->getThingTemplate()->getName().str()) );
 
+			// get the production interface from the factory object
+			ProductionUpdateInterface *pu = factory->getProductionUpdateInterface();
+
+			// sanity, we can't build things if we can't produce units
+			if( pu == nullptr )
+			{
+
+				DEBUG_CRASH( ("Cannot create '%s' because the factory object '%s' is not capable of producing units",
+																whatToBuild->getName().str(),
+																factory->getTemplate()->getName().str()) );
+				break;
+
+			}
+
+			// W3DNext: holding SHIFT operates in batches of 5
+			Int zpCount = (TheKeyboard && TheKeyboard->isShift()) ? 5 : 1;
+
+			// W3DNext: right-clicking a build button cancels the most-recently-queued
+			// units of this type (5 with SHIFT, otherwise 1)
+			if( gadgetMessage == GBM_SELECTED_RIGHT )
+			{
+				if( !factory->isLocallyControlled() )
+					break;
+
+				ProductionID idsToCancel[ 5 ];
+				Int numFound = 0;
+				for( const ProductionEntry *e = pu->firstProduction(); e != nullptr; e = pu->nextProduction( e ) )
+				{
+					if( e->getProductionType() == PRODUCTION_UNIT && e->getProductionObject() == whatToBuild )
+					{
+						if( numFound < zpCount )
+							idsToCancel[ numFound++ ] = e->getProductionID();
+						else
+						{
+							// keep a sliding window of the newest zpCount ids
+							for( Int k = 1; k < zpCount; ++k )
+								idsToCancel[ k - 1 ] = idsToCancel[ k ];
+							idsToCancel[ zpCount - 1 ] = e->getProductionID();
+						}
+					}
+				}
+				// cancel newest-first
+				for( Int k = numFound - 1; k >= 0; --k )
+				{
+					GameMessage *cancelMsg = TheMessageStream->appendMessage( GameMessage::MSG_CANCEL_UNIT_CREATE );
+					cancelMsg->appendIntegerArgument( idsToCancel[ k ] );
+				}
+				break;
+			}
+
+			// left-click: make sure we can build at least one (for the UI feedback), then
+			// queue up to zpCount. The logic side re-validates every request, so extra
+			// requests beyond what we can afford / fit are safely rejected.
 			CanMakeType cmt = TheBuildAssistant->canMakeUnit(factory, whatToBuild);
 
 			if (cmt == CANMAKE_NO_MONEY)
@@ -426,28 +480,14 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 				break;
 			}
 
-			// get the production interface from the factory object
-			ProductionUpdateInterface *pu = factory->getProductionUpdateInterface();
-
-			// sanity, we can't build things if we can't produce units
-			if( pu == nullptr )
+			for( Int n = 0; n < zpCount; ++n )
 			{
-
-				DEBUG_CRASH( ("Cannot create '%s' because the factory object '%s' is not capable of producing units",
-																whatToBuild->getName().str(),
-																factory->getTemplate()->getName().str()) );
-				break;
-
+				// get a new production id to assign to this, and create a build message
+				ProductionID productionID = pu->requestUniqueUnitID();
+				GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_QUEUE_UNIT_CREATE );
+				msg->appendIntegerArgument( whatToBuild->getTemplateID() );
+				msg->appendIntegerArgument( productionID );
 			}
-
-			// get a new production id to assign to this
-			ProductionID productionID = pu->requestUniqueUnitID();
-
-			// create a message to build this thing
-
-			GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_QUEUE_UNIT_CREATE );
-			msg->appendIntegerArgument( whatToBuild->getTemplateID() );
-			msg->appendIntegerArgument( productionID );
 
 			break;
 
@@ -476,9 +516,6 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 			if( m_queueData[ i ].type != PRODUCTION_UNIT )
 				break;
 
-			// the the production ID to cancel
-			ProductionID productionIDToCancel = m_queueData[ i ].productionID;
-
 			// get the object that is the producer
 			Object *producer = obj;
 			if( producer == nullptr )
@@ -488,9 +525,18 @@ CBCommandStatus ControlBar::processCommandUI( GameWindow *control,
 			if( !producer->isLocallyControlled() )
 				break;
 
-			// send a message to cancel that particular production entry
-			GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_CANCEL_UNIT_CREATE );
-			msg->appendIntegerArgument( productionIDToCancel );
+			// W3DNext: holding SHIFT cancels 5 queued units (this entry plus the
+			// following ones in the queue); otherwise just the clicked entry
+			Int zpCount = (TheKeyboard && TheKeyboard->isShift()) ? 5 : 1;
+			for( Int k = 0; k < zpCount && (i + k) < MAX_BUILD_QUEUE_BUTTONS; ++k )
+			{
+				if( m_queueData[ i + k ].type != PRODUCTION_UNIT )
+					break;
+
+				// send a message to cancel that particular production entry
+				GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_CANCEL_UNIT_CREATE );
+				msg->appendIntegerArgument( m_queueData[ i + k ].productionID );
+			}
 
 			break;
 

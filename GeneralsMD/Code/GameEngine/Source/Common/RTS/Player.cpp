@@ -80,6 +80,8 @@
 #include "GameLogic/AI.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/AISkirmishPlayer.h"
+#include "GameLogic/Stratagem/StratagemStrategist.h"	// STRATAGEM: per-AI personality attach
+#include "GameLogic/Stratagem/StratagemBrain.h"			// STRATAGEM: enable the world model for execution
 #include "GameLogic/ExperienceTracker.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/Scripts.h"
@@ -744,12 +746,32 @@ void Player::setPlayerType(PlayerType t, Bool skirmish)
 
 	if (t == PLAYER_COMPUTER)
 	{
-		if (skirmish || TheAI->getAiData()->m_forceSkirmishAI) {
+		const Bool isSkirmish = (skirmish || TheAI->getAiData()->m_forceSkirmishAI);
+		if (isSkirmish) {
 			// create AIPlayer and attach to this Player
 			m_ai = newInstance(AISkirmishPlayer)( this );
 		} else {
 			// create AIPlayer and attach to this Player
 			m_ai = newInstance(AIPlayer)( this );
+		}
+
+		// STRATAGEM (P2.2): if a Strategist template was requested (e.g. -stratagemAI rommel),
+		// give the FIRST skirmish AI a personality+planner; later skirmish AIs stay stock so the
+		// match is persona-vs-baseline. NULL strategist = unchanged stock AI, so the default game
+		// (no flag) is byte-identical to before.
+		if (m_ai && isSkirmish && StratagemAIHasConfig() && StratagemAIClaimSubjectSlot()) {
+			StratagemStrategist *sg = new StratagemStrategist();
+			if (sg->assignFromCommandLine()) {   // custom -stratagemTraits, else -stratagemAI template
+				m_ai->setStratagem( sg );
+				// The Strategist reads the influence map, so the world model must run.
+				if (TheStratagemBrain) TheStratagemBrain->setEnabled( true );
+				DEBUG_LOG(("STRATAGEM: assigned Strategist '%s' (teamCadence %.2fx) to computer player %d",
+					sg->name().str(), sg->teamCadenceScale(), getPlayerIndex()));
+			} else {
+				DEBUG_LOG(("STRATAGEM: could not build Strategist (template '%s') - skirmish AI %d stays stock",
+					StratagemAIGetTemplateId().str(), getPlayerIndex()));
+				delete sg;
+			}
 		}
 	}
 }
@@ -888,6 +910,32 @@ void Player::initFromDict(const Dict* d)
 		if (m_ai)
 		{
 			m_ai->setAIDifficulty(difficulty);
+		}
+
+		// STRATAGEM (lobby): if this AI slot picked a Strategist personality, attach it here,
+		// with competence taken from the slot's difficulty (the Opponent column). This is the
+		// per-slot path; the global -stratagemAI/-stratagemTraits path (setPlayerType) is for
+		// the headless optimization harness.
+		Int strategistId = d->getInt(TheKey_skirmishStrategistId, &exists);
+		if (exists && strategistId >= 0 && m_ai && m_ai->isSkirmishAI())
+		{
+			StratagemDifficulty comp = STRAT_DIFF_NORMAL;
+			switch (difficulty) {
+				case DIFFICULTY_EASY:   comp = STRAT_DIFF_EASY;   break;
+				case DIFFICULTY_NORMAL: comp = STRAT_DIFF_NORMAL; break;
+				case DIFFICULTY_HARD:   comp = STRAT_DIFF_BRUTAL; break;
+				default: break;
+			}
+			StratagemStrategist *sg = new StratagemStrategist();
+			if (sg->assignByRosterIndex( strategistId, comp ))
+			{
+				if (m_ai->getStratagem()) delete m_ai->getStratagem();   // replace any global-flag one
+				m_ai->setStratagem( sg );
+				if (TheStratagemBrain) TheStratagemBrain->setEnabled( true );
+				DEBUG_LOG(("STRATAGEM: slot strategist '%s' (roster %d, comp %d) -> computer player %d",
+					sg->name().str(), strategistId, (Int)comp, getPlayerIndex()));
+			}
+			else { delete sg; }
 		}
 
 		if (!found)
@@ -2916,6 +2964,12 @@ static void countExisting( Object *obj, void *userData )
 // Make sure that building another of this unit/structure/object won't exceed MaxSimultaneousOfType()
 Bool Player::canBuildMoreOfType( const ThingTemplate *whatToBuild ) const
 {
+  // W3DNext: "No Superweapons" option - superweapon-restricted structures can't be
+  // built at all when the restriction is set to NONE.
+  if ( whatToBuild->isSuperweaponRestricted() && TheGameLogic
+       && TheGameLogic->getSuperweaponRestriction() == GameLogic::SUPERWEAPON_RESTRICTION_NONE )
+    return false;
+
   // make sure we're not maxed out for this type of unit.
   UnsignedInt maxSimultaneousOfType = whatToBuild->getMaxSimultaneousOfType();
   if (maxSimultaneousOfType != 0)

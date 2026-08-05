@@ -74,6 +74,7 @@ GlobalData* GlobalData::m_theOriginal = nullptr;
 /*static*/ const FieldParse GlobalData::s_GlobalDataFieldParseTable[] =
 {
 	{ "Windowed",									INI::parseBool,				nullptr,			offsetof( GlobalData, m_windowed ) },
+	{ "ZeroPowerDevMode",					INI::parseBool,				nullptr,			offsetof( GlobalData, m_zpDevMode ) },
 	{ "XResolution",							INI::parseInt,				nullptr,			offsetof( GlobalData, m_xResolution ) },
 	{ "YResolution",							INI::parseInt,				nullptr,			offsetof( GlobalData, m_yResolution ) },
 	{ "MapName",									INI::parseAsciiString,nullptr,			offsetof( GlobalData, m_mapName ) },
@@ -636,7 +637,11 @@ GlobalData::GlobalData()
 	m_framesPerSecondLimit = 0;
 	m_chipSetType = 0;
 	m_headless = FALSE;
+	m_gfxBackendD3D11 = FALSE;	// W3DNext: default render backend is DX8 (unchanged default path)
+	m_zpBWFilterAtFrame = 0;	// W3DNext: BW screen-filter test hook off by default
 	m_windowed = 0;
+	m_borderless = TRUE;	// W3DNext: default fullscreen is borderless (safe on Win11 alt-tab); -exclusive opts into true exclusive fullscreen
+	m_zpDevMode = FALSE;	// W3DNext: retail default (ship gate 2026-07-28); dev builds opt back in via ZeroPowerDevMode=Yes INI (10x faster construction, dev overlays, backend badge)
 	m_xResolution = DEFAULT_DISPLAY_WIDTH;
 	m_yResolution = DEFAULT_DISPLAY_HEIGHT;
 	m_maxShellScreens = 0;
@@ -991,6 +996,15 @@ GlobalData::GlobalData()
 	m_initialFile.clear();
 	m_pendingFile.clear();
 
+	m_stratagemShot = FALSE;
+	m_stratagemShotMap.clear();
+
+	m_navalShot = FALSE;
+	m_navalShotMap.clear();
+
+	m_navalSandbox = FALSE;
+	m_navalSandboxMap.clear();
+
 	m_simulateReplays.clear();
 	m_simulateReplayJobs = SIMULATE_REPLAYS_SEQUENTIAL;
 
@@ -1233,8 +1247,20 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 	if (val > 50)
 		TheWritableGlobalData->m_displayGamma=1.0f+(1.0f) * (Real)(val-50)/50.0f;
 
+	// W3DNext: default to a modern resolution when the player has not explicitly
+	// chosen one. An explicit "Resolution" entry in Options.ini (set via the in-game
+	// Options menu) always wins; -xres/-yres are parsed later and still override this.
 	Int xres,yres;
-	optionPref.getResolution(&xres, &yres);
+	if (optionPref.find("Resolution") != optionPref.end())
+	{
+		optionPref.getResolution(&xres, &yres);
+	}
+	else
+	{
+		// W3DNext default startup resolution (tuned for the dev's 1440p monitor).
+		xres = 2560;
+		yres = 1440;
+	}
 
 	TheWritableGlobalData->m_xResolution = xres;
 	TheWritableGlobalData->m_yResolution = yres;

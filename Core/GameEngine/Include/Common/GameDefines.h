@@ -176,3 +176,11 @@
 #define DEFAULT_DISPLAY_BIT_DEPTH   32
 #define DEFAULT_DISPLAY_WIDTH      800 // The standard resolution this game was designed for
 #define DEFAULT_DISPLAY_HEIGHT     600 // The standard resolution this game was designed for
+
+// W3DNext: startup resolution used when the player has not yet chosen one in
+// the Options menu (no "Resolution" entry in Options.ini). An explicit choice
+// always wins, and -xres/-yres still override. Tuned for the dev's 1440p monitor;
+// change these two lines to retarget the default. NOTE: this is the *default
+// mode*, not the design resolution above (which drives UI layout - do not change).
+#define W3DNEXT_DEFAULT_DISPLAY_WIDTH   2560
+#define W3DNEXT_DEFAULT_DISPLAY_HEIGHT  1440

@@ -213,6 +213,12 @@ protected:
 	DisplayString *m_displayStrings[DisplayStringCount];
 	DisplayString *m_benchmarkDisplayString;
 
+	// W3DNext renderer port: small always-on backend badge ("DX8"/"D3D11")
+	// drawn in the bottom-right corner every frame (menus and in-game) so mod
+	// developers migrating DX8->D3D11 can always see which backend is live.
+	DisplayString *m_backendBadgeString;
+	void drawBackendBadge();
+
 	W3DDebugDisplay *m_nativeDebugDisplay;		///< W3D specific debug display interface
 
 };

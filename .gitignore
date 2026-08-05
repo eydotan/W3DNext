@@ -67,3 +67,20 @@ build.ninja
 ## Python
 __pycache__/
 *.pyc
+
+## W3DNext in-game screenshots (F9 hotkey) - keep the folder, ignore the shots
+/scrshots/*
+!/scrshots/.gitkeep
+
+## Local-only artifacts (machine-specific / regenerable)
+
+/previews/
+# STRATAGEM training run raw logs (bulky; keep manifest/REPORT/csv/delta)
+runs/**/logs/
+runs/_*/
+
+# D3D11 backend runtime diagnostic log (artifact)
+d3d11_backend.log
+
+# post-clear capsule (session-local, never committed)
+.pcp.md

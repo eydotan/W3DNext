@@ -43,6 +43,10 @@ set(WW3D2_SRC
     distlod.cpp
     distlod.h
     dllist.h
+    Backend/DX8Backend.cpp
+    Backend/DX8Backend.h
+    Backend/RenderBackend.cpp
+    Backend/RenderBackend.h
     dx8caps.cpp
     dx8caps.h
     dx8fvf.cpp
@@ -90,6 +94,7 @@ set(WW3D2_SRC
     htree.h
     #htreemgr.cpp
     #htreemgr.h
+    IRenderBackend.h
     intersec.cpp
     intersec.h
     intersec.inl
@@ -233,6 +238,25 @@ set(WW3D2_SRC
     ww3dtrig.h
 )
 
+# D3D11Backend (RENDERER_PORT step 3) talks to the D3D11 runtime directly and
+# is Windows-only; the DX8 reference backend remains the constructed default.
+if(WIN32)
+    list(APPEND WW3D2_SRC
+        Backend/D3D11Backend.cpp
+        Backend/D3D11Backend.h
+        # ww3d2-ONLY half of the D3D11 backend: the virtuals whose bodies must
+        # dereference the W3D handle classes (VertexBufferClass / ShaderClass /
+        # VertexMaterialClass / TextureBaseClass ...). Deliberately NOT part of the
+        # w3d_d3d11_smoke target (which links no ww3d2); the matching stubs in
+        # D3D11Backend.cpp are compiled out when ZP_D3D11_W3D_TU is defined (below).
+        Backend/D3D11Backend_W3D.cpp
+        Backend/D3D11FVF.cpp
+        Backend/D3D11FVF.h
+        Backend/D3D11States.cpp
+        Backend/D3D11States.h
+    )
+endif()
+
 add_library(corei_ww3d2 INTERFACE)
 
 target_sources(corei_ww3d2 INTERFACE ${WW3D2_SRC})
@@ -248,3 +272,20 @@ target_link_libraries(corei_ww3d2 INTERFACE
     core_wwlib
     core_wwmath
 )
+
+# D3D11Backend (RENDERER_PORT step 3) needs the D3D11 runtime. Scoped here
+# because the backend source is part of WW3D2_SRC and compiles into every
+# consumer of this interface library.
+if(WIN32)
+    target_link_libraries(corei_ww3d2 INTERFACE
+        d3d11
+        dxgi
+        d3dcompiler
+    )
+    # Tell D3D11Backend.cpp that its ww3d2-only companion (D3D11Backend_W3D.cpp,
+    # above) supplies the real W3D-typed method bodies, so its placeholder stubs
+    # for those methods compile out - leaving exactly one definition per method in
+    # the game link. The standalone w3d_d3d11_smoke target does NOT link this
+    # interface library and never sees this define, so its stubs stay in place.
+    target_compile_definitions(corei_ww3d2 INTERFACE ZP_D3D11_W3D_TU=1)
+endif()

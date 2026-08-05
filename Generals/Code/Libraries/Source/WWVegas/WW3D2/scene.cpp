@@ -65,6 +65,7 @@
 #include "chunkio.h"
 #include "dx8renderer.h"
 #include "dx8wrapper.h"
+#include "Backend/RenderBackend.h"
 #include "sortingrenderer.h"
 #include "coltest.h"
 
@@ -208,7 +209,7 @@ void SceneClass::Remove_Render_Object(RenderObjClass * obj)
  *=============================================================================================*/
 void SceneClass::Render(RenderInfoClass & rinfo)
 {
-	DX8Wrapper::Set_Fog(FogEnabled, FogColor, FogStart, FogEnd);
+	g_renderBackend->Set_Fog(FogEnabled, FogColor, FogStart, FogEnd);
 
 	if (Get_Extra_Pass_Polygon_Mode()==EXTRA_PASS_DISABLE) {
 		Customized_Render(rinfo);
@@ -226,7 +227,7 @@ void SceneClass::Render(RenderInfoClass & rinfo)
 			Customized_Render(rinfo);
 			break;
 		case EXTRA_PASS_CLEAR_LINE:
-			DX8Wrapper::Clear(true, false, Vector3(0.0f,0.0f,0.0f));	// Clear color but not z
+			g_renderBackend->Clear(true, false, Vector3(0.0f,0.0f,0.0f));	// Clear color but not z
 			WW3D::Enable_Texturing(false);
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
 			DX8Wrapper::Set_DX8_Render_State (D3DRS_ZBIAS, 7);
@@ -546,15 +547,15 @@ void SimpleSceneClass::Customized_Render(RenderInfoClass & rinfo)
 	WWASSERT(rinfo.light_environment==nullptr);
 	int count=0;
 	// Turn off lights in case we have none
-	DX8Wrapper::Set_Light(0,nullptr);
-	DX8Wrapper::Set_Light(1,nullptr);
-	DX8Wrapper::Set_Light(2,nullptr);
-	DX8Wrapper::Set_Light(3,nullptr);
+	g_renderBackend->Disable_Light(0);
+	g_renderBackend->Disable_Light(1);
+	g_renderBackend->Disable_Light(2);
+	g_renderBackend->Disable_Light(3);
 	for (it.First(&LightList); !it.Is_Done(); it.Next())
 	{
 		if (count<4)
 		{
-			DX8Wrapper::Set_Light(count,*(LightClass*)it.Peek_Obj());
+			g_renderBackend->Set_Light(count,*(LightClass*)it.Peek_Obj());
 		} else
 		{
 			// Simple scene only supports 4 global lights

@@ -245,6 +245,10 @@ public:
 	// We need to allow access to this, because on a restartGame, we need to restart with the settings we started with
 	Int getRankPointsToAddAtGameStart() const { return m_rankPointsToAddAtGameStart; }
 
+  // W3DNext: superweapon-restriction values. 0 = unlimited, 1 = limit to one of each;
+  // SUPERWEAPON_RESTRICTION_NONE blocks superweapon structures from being built at all.
+  enum { SUPERWEAPON_RESTRICTION_NONE = 0xFFFF };
+
   UnsignedShort getSuperweaponRestriction() const; ///< Get any optional limits on superweapons
   void setSuperweaponRestriction();
 

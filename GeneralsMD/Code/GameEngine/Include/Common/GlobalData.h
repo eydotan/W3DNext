@@ -121,7 +121,22 @@ public:
 	// Run game without graphics, input or audio.
 	Bool m_headless;
 
+	// W3DNext renderer port: select the D3D11 render backend instead of the
+	// default DX8 one (RENDERER_PORT.md step 10). Default FALSE -> the game
+	// constructs DX8Backend exactly as before (byte-identical default path).
+	// Set by -gfxBackend d3d11 (or -d3d11). When TRUE, Init_Render_Backend
+	// constructs D3D11Backend and brings up its own device on the game HWND.
+	Bool m_gfxBackendD3D11;
+
+	// W3DNext renderer port: -zpBWFilter <logicframe> deterministically
+	// engages the mission black&white screen filter (the ScriptActions
+	// doBlackWhiteMode path) once game logic reaches that frame. 0 (default) =
+	// never. Test hook for the screen-filter A/B oracle.
+	Int m_zpBWFilterAtFrame;
+
 	Bool m_windowed;
+	Bool m_borderless;			///< W3DNext: fullscreen is a frameless desktop-sized popup over a *windowed* D3D device (default on). Fixes the DX8 exclusive-fullscreen alt-tab device-lost freeze on Win11; -exclusive opts back into true exclusive fullscreen.
+	Bool m_zpDevMode;			///< W3DNext developer mode (e.g. 10x faster construction). Default on.
 	Int m_xResolution;
 	Int m_yResolution;
 	Int m_maxShellScreens;  ///< this many shells layouts can be loaded at once
@@ -350,6 +365,15 @@ public:
 	Bool m_buildMapCache;
 	AsciiString m_initialFile;				///< If this is specified, load a specific map from the command-line
 	AsciiString m_pendingFile;				///< If this is specified, use this map at the next game start
+
+	Bool m_stratagemShot;					///< -stratagemShot: auto-run an AI skirmish + capture the STRATAGEM influence overlay, then exit
+	AsciiString m_stratagemShotMap;			///< optional map path for -stratagemShot (else the first multiplayer map in the cache)
+
+	Bool m_navalShot;						///< -navalShot: auto-run a skirmish, spawn a ChinaGunboat, order it across water, DEBUG_LOG the result, then exit
+	AsciiString m_navalShotMap;				///< map path for -navalShot (a water map, e.g. "Tournament Lake")
+
+	Bool m_navalSandbox;					///< -navalSandbox: AI-vs-AI water demo - two allied sides keep PRODUCING ChinaGunboats at spawned War Factories and patrol them (no combat); windowed, runs until killed
+	AsciiString m_navalSandboxMap;			///< map path for -navalSandbox (a water map, e.g. "Tournament Lake")
 
 	std::vector<AsciiString> m_simulateReplays; ///< If not empty, simulate this list of replays and exit.
 	Int m_simulateReplayJobs; ///< Maximum number of processes to use for simulation, or SIMULATE_REPLAYS_SEQUENTIAL for sequential simulation

@@ -88,6 +88,10 @@ public:
 	void setTeamNumber( Int teamNumber ) { m_teamNumber = teamNumber; }
 	Int getTeamNumber() const { return m_teamNumber; }
 
+	// STRATAGEM: per-slot AI personality (base-template roster index), or -1 for none/stock.
+	void setStrategistId( Int id ) { m_strategistId = id; }
+	Int getStrategistId() const { return m_strategistId; }
+
 	void setName( UnicodeString name ) { m_name = name; }
 	UnicodeString getName() const { return m_name; }
 
@@ -136,6 +140,7 @@ protected:
 	Int m_startPos;																		///< start position, or -1 for random
 	Int m_playerTemplate;															///< PlayerTemplate
 	Int m_teamNumber;																	///< alliance, -1 for none
+	Int m_strategistId;																///< STRATAGEM: AI personality roster index, -1 = none
 	Int m_origColor;																			///< color, or -1 for random
 	Int m_origStartPos;																		///< start position, or -1 for random
 	Int m_origPlayerTemplate;															///< PlayerTemplate

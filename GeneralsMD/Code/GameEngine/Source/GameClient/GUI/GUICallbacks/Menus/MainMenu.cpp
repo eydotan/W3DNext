@@ -105,6 +105,7 @@ void DoCompressTest();
 // window ids -------------------------------------------------------------------------------------
 static NameKeyType mainMenuID = NAMEKEY_INVALID;
 static NameKeyType skirmishID = NAMEKEY_INVALID;
+static NameKeyType skirmishMainID = NAMEKEY_INVALID;	// W3DNext: Skirmish button on the main menu
 static NameKeyType onlineID = NAMEKEY_INVALID;
 static NameKeyType networkID = NAMEKEY_INVALID;
 static NameKeyType optionsID = NAMEKEY_INVALID;
@@ -449,6 +450,7 @@ void MainMenuInit( WindowLayout *layout, void *userData )
 	mainMenuID = TheNameKeyGenerator->nameToKey( "MainMenu.wnd:MainMenuParent" );
 //	campaignID = TheNameKeyGenerator->nameToKey( "MainMenu.wnd:ButtonCampaign" );
 	skirmishID = TheNameKeyGenerator->nameToKey( "MainMenu.wnd:ButtonSkirmish" );
+	skirmishMainID = TheNameKeyGenerator->nameToKey( "MainMenu.wnd:ButtonSkirmishMain" );	// W3DNext
 	onlineID = TheNameKeyGenerator->nameToKey( "MainMenu.wnd:ButtonOnline" );
 	networkID = TheNameKeyGenerator->nameToKey( "MainMenu.wnd:ButtonNetwork" );
 	optionsID = TheNameKeyGenerator->nameToKey( "MainMenu.wnd:ButtonOptions" );
@@ -1292,6 +1294,15 @@ WindowMsgHandledType MainMenuSystem( GameWindow *window, UnsignedInt msg,
 				TheTransitionHandler->remove("MainMenuDefaultMenu");
 				TheTransitionHandler->reverse("MainMenuDefaultMenuBack");
 				TheTransitionHandler->setGroup("MainMenuSinglePlayerMenu");
+			}
+			else if( controlID == skirmishMainID )
+			{
+				// W3DNext: Skirmish button added directly to the main menu;
+				// jumps straight to the skirmish setup instead of the Solo Play submenu.
+				if(dontAllowTransitions)
+					break;
+				buttonPushed = TRUE;
+				TheShell->push( "Menus/SkirmishGameOptionsMenu.wnd" );
 			}
 			else if( controlID == buttonSingleBackID )
 			{

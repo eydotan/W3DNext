@@ -42,6 +42,7 @@
 #include "dx8vertexbuffer.h"
 #include "dx8indexbuffer.h"
 #include "dx8wrapper.h"
+#include "Backend/RenderBackend.h"
 #include "vertmaterial.h"
 #include "texture.h"
 #include "d3d8.h"
@@ -209,6 +210,8 @@ static TempIndexStruct* Get_Temp_Index_Array(unsigned count)
 //
 // ----------------------------------------------------------------------------
 
+void Release_Refs(SortingNodeStruct* state); // defined below
+
 void SortingRendererClass::Insert_Triangles(
 	const SphereClass& bounding_sphere,
 	unsigned short start_index,
@@ -217,7 +220,7 @@ void SortingRendererClass::Insert_Triangles(
 	unsigned short vertex_count)
 {
 	if (!WW3D::Is_Sorting_Enabled()) {
-		DX8Wrapper::Draw_Triangles(start_index,polygon_count,min_vertex_index,vertex_count);
+		g_renderBackend->Draw_Triangles(start_index,polygon_count,min_vertex_index,vertex_count);
 		return;
 	}
 
@@ -244,6 +247,15 @@ void SortingRendererClass::Insert_Triangles(
 
 	SortingVertexBufferClass* vertex_buffer=static_cast<SortingVertexBufferClass*>(state->sorting_state.vertex_buffers[0]);
 	WWASSERT(vertex_buffer);
+	WWASSERT(state->sorting_state.index_buffer);
+	if (vertex_buffer==nullptr || state->sorting_state.index_buffer==nullptr) {
+		// Defensive: if the live render backend failed to record its VB/IB binds
+		// into render_state, this node cannot be sorted or flushed - drop it
+		// instead of null-dereferencing here / in Flush.
+		Release_Refs(state);
+		clean_list.Add_Head(state);
+		return;
+	}
 	WWASSERT(state->vertex_count<=vertex_buffer->Get_Vertex_Count());
 
 	D3DXMATRIX mtx=(D3DXMATRIX&)state->sorting_state.world*(D3DXMATRIX&)state->sorting_state.view;
@@ -355,20 +367,22 @@ void SortingRendererClass::Insert_To_Sorting_Pool(SortingNodeStruct* state)
 
 static void Apply_Render_State(RenderStateStruct& render_state)
 {
-	DX8Wrapper::Set_Shader(render_state.shader);
+	g_renderBackend->Set_Shader(render_state.shader);
 
-	DX8Wrapper::Set_Material(render_state.material);
+	g_renderBackend->Set_Material(render_state.material);
 
 	for (int i=0;i<DX8Wrapper::Get_Current_Caps()->Get_Max_Textures_Per_Pass();++i)
 	{
-		DX8Wrapper::Set_Texture(i,render_state.Textures[i]);
+		g_renderBackend->Set_Texture(i,render_state.Textures[i]);
 	}
 
 	DX8Wrapper::_Set_DX8_Transform(D3DTS_WORLD,render_state.world);
 	DX8Wrapper::_Set_DX8_Transform(D3DTS_VIEW,render_state.view);
 
 
-	if (!render_state.material->Get_Lighting())
+	// material==null is defensive: a backend that failed to record its material
+	// bind into render_state would null-deref Get_Lighting() here.
+	if (render_state.material==nullptr || !render_state.material->Get_Lighting())
 		return;	//no point changing lights if they are ignored.
   //prevLight = render_state.lightsHash;
 
@@ -543,10 +557,10 @@ void SortingRendererClass::Flush_Sorting_Pool()
 
 	// Set index buffer and render!
 
-	DX8Wrapper::Set_Index_Buffer(dyn_ib_access,0); // Override with this buffer (do something to prevent need for this!)
-	DX8Wrapper::Set_Vertex_Buffer(dyn_vb_access); // Override with this buffer (do something to prevent need for this!)
+	g_renderBackend->Set_Index_Buffer(dyn_ib_access,0); // Override with this buffer (do something to prevent need for this!)
+	g_renderBackend->Set_Vertex_Buffer(dyn_vb_access); // Override with this buffer (do something to prevent need for this!)
 
-	DX8Wrapper::Apply_Render_State_Changes();
+	g_renderBackend->Apply_Render_State_Changes();
 
 	unsigned count_to_render=1;
 	unsigned start_index=0;
@@ -556,7 +570,7 @@ void SortingRendererClass::Flush_Sorting_Pool()
 			SortingNodeStruct* state=overlapping_nodes[node_id];
 			Apply_Render_State(state->sorting_state);
 
-			DX8Wrapper::Draw_Triangles(
+			g_renderBackend->Draw_Triangles(
 				start_index*3,
 				count_to_render,
 				state->min_vertex_index,
@@ -574,7 +588,7 @@ void SortingRendererClass::Flush_Sorting_Pool()
 		SortingNodeStruct* state=overlapping_nodes[node_id];
 		Apply_Render_State(state->sorting_state);
 
-		DX8Wrapper::Draw_Triangles(
+		g_renderBackend->Draw_Triangles(
 			start_index*3,
 			count_to_render,
 			state->min_vertex_index,
@@ -602,8 +616,8 @@ void SortingRendererClass::Flush()
 	WWPROFILE("SortingRenderer::Flush");
 	Matrix4x4 old_view;
 	Matrix4x4 old_world;
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,old_view);
-	DX8Wrapper::Get_Transform(D3DTS_WORLD,old_world);
+	g_renderBackend->Get_Transform(RB_TRANSFORM_VIEW,old_view);
+	g_renderBackend->Get_Transform(RB_TRANSFORM_WORLD,old_world);
 
 	while (SortingNodeStruct* state=sorted_list.Head()) {
 		state->Remove();
@@ -614,7 +628,7 @@ void SortingRendererClass::Flush()
 		}
 		else {
 			DX8Wrapper::Set_Render_State(state->sorting_state);
-			DX8Wrapper::Draw_Triangles(state->start_index,state->polygon_count,state->min_vertex_index,state->vertex_count);
+			g_renderBackend->Draw_Triangles(state->start_index,state->polygon_count,state->min_vertex_index,state->vertex_count);
 			DX8Wrapper::Release_Render_State();
 			Release_Refs(state);
 			clean_list.Add_Head(state);
@@ -626,16 +640,16 @@ void SortingRendererClass::Flush()
 	Flush_Sorting_Pool();
 	DX8Wrapper::_Enable_Triangle_Draw(old_enable);
 
-	DX8Wrapper::Set_Index_Buffer(nullptr,0);
-	DX8Wrapper::Set_Vertex_Buffer(nullptr);
+	g_renderBackend->Set_Index_Buffer(nullptr,0);
+	g_renderBackend->Set_Vertex_Buffer(nullptr);
 	total_sorting_vertices=0;
 
 	DynamicIBAccessClass::_Reset(false);
 	DynamicVBAccessClass::_Reset(false);
 
 
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,old_view);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,old_world);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_VIEW,old_view);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,old_world);
 
 }
 
@@ -682,7 +696,7 @@ void SortingRendererClass::Insert_VolumeParticle(
 	unsigned short layerCount)
 {
 	if (!WW3D::Is_Sorting_Enabled()) {
-		DX8Wrapper::Draw_Triangles(start_index,polygon_count,min_vertex_index,vertex_count);
+		g_renderBackend->Draw_Triangles(start_index,polygon_count,min_vertex_index,vertex_count);
 		return;
 	}
 
@@ -705,6 +719,13 @@ void SortingRendererClass::Insert_VolumeParticle(
 
 	SortingVertexBufferClass* vertex_buffer=static_cast<SortingVertexBufferClass*>(state->sorting_state.vertex_buffers[0]);
 	WWASSERT(vertex_buffer);
+	WWASSERT(state->sorting_state.index_buffer);
+	if (vertex_buffer==nullptr || state->sorting_state.index_buffer==nullptr) {
+		// Defensive: see Insert_Triangles.
+		Release_Refs(state);
+		clean_list.Add_Head(state);
+		return;
+	}
 	WWASSERT(state->vertex_count<=vertex_buffer->Get_Vertex_Count());
 
 	// Transform the center point to view space for sorting

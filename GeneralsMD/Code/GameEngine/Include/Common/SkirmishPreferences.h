@@ -58,6 +58,10 @@ public:
   Bool getSuperweaponRestricted() const;
   void setSuperweaponRestricted( Bool superweaponRestricted);
 
+  // W3DNext: "No Superweapons" option (separate from the limit-to-one option)
+  Bool getNoSuperweapons() const;
+  void setNoSuperweapons( Bool noSuperweapons );
+
   Money getStartingCash() const;
   void setStartingCash( const Money &startingCash );
 };

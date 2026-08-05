@@ -99,6 +99,7 @@ static void drawFramerateBar();
 #include "WW3D2/meshmatdesc.h"
 #include "WW3D2/meshmdl.h"
 #include "WW3D2/rddesc.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "TARGA.h"
 
 #include "GameLogic/ScriptEngine.h"		// For TheScriptEngine - jkmcd
@@ -497,7 +498,7 @@ void W3DDisplay::setGamma(Real gamma, Real bright, Real contrast, Bool calibrate
 	if (m_windowed)
 		return;	//we don't allow gamma to change in window because it would affect desktop.
 
-	DX8Wrapper::Set_Gamma(gamma,bright,contrast,calibrate, false);
+	g_renderBackend->Set_Gamma(gamma,bright,contrast,calibrate, false);
 }
 
 /** Set resolution of display */

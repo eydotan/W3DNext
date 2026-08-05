@@ -75,6 +75,7 @@
 #include "ww3d.h"
 #include "matrix4.h"
 #include "dx8wrapper.h"
+#include "Backend/RenderBackend.h"
 
 
 /***********************************************************************************************
@@ -738,19 +739,19 @@ void CameraClass::Apply()
 	bool windowed;
 	WW3D::Get_Render_Target_Resolution(width,height,bits,windowed);
 
-	D3DVIEWPORT8 vp;
-	vp.X = (DWORD)(Viewport.Min.X * (float)width);
-	vp.Y = (DWORD)(Viewport.Min.Y * (float)height);
-	vp.Width = (DWORD)((Viewport.Max.X - Viewport.Min.X) * (float)width);
-	vp.Height = (DWORD)((Viewport.Max.Y - Viewport.Min.Y) * (float)height);
-	vp.MinZ = ZBufferMin;
-	vp.MaxZ = ZBufferMax;
-	DX8Wrapper::Set_Viewport(&vp);
+	RenderBackendViewport vp;
+	vp.x = (DWORD)(Viewport.Min.X * (float)width);
+	vp.y = (DWORD)(Viewport.Min.Y * (float)height);
+	vp.width = (DWORD)((Viewport.Max.X - Viewport.Min.X) * (float)width);
+	vp.height = (DWORD)((Viewport.Max.Y - Viewport.Min.Y) * (float)height);
+	vp.min_z = ZBufferMin;
+	vp.max_z = ZBufferMax;
+	g_renderBackend->Set_Viewport(vp);
 
 	Matrix4x4 d3dprojection;
 	Get_D3D_Projection_Matrix(&d3dprojection);
-	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,d3dprojection);
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,CameraInvTransform);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_PROJECTION,d3dprojection);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_VIEW,CameraInvTransform);
 }
 
 void CameraClass::Set_Clip_Planes(float znear,float zfar)

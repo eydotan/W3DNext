@@ -90,6 +90,7 @@
 #include "W3DDevice/GameClient/Module/W3DModelDraw.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
 
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/dx8renderer.h"
 #include "WW3D2/light.h"
 #include "WW3D2/camera.h"
@@ -270,6 +271,10 @@ void W3DView::setOrigin( Int x, Int y)
 /** @todo This is inefficient. We should construct the matrix directly using vectors. */
 //-------------------------------------------------------------------------------------------------
 #define MIN_CAPPED_ZOOM (0.5f) //WST 10.19.2002. JSC integrated 5/20/03.
+
+// W3DNext: multiplier applied to the maximum camera zoom-out height. 2.0 lets
+// the player (and the default view) zoom out twice as far as the stock camera.
+#define W3DNEXT_CAMERA_ZOOM_OUT_SCALE (2.0f)
 void W3DView::buildCameraPosition( Vector3& sourcePos, Vector3& targetPos )
 {
 	const Real zoom = getZoom();
@@ -1911,7 +1916,7 @@ void W3DView::draw()
 		//The pass that rendered into a texture may have left the z-buffer in a weird state
 		//so clear it before rendering normal scene.
 		///@todo: Don't clear z-buffer unless shader uses z-bias or anything else that would cause <= z to fail on normal render.
-		DX8Wrapper::Clear(false, true, Vector3(0.0f,0.0f,0.0f), TheWaterTransparency->m_minWaterOpacity);	// Clear z but not color
+		g_renderBackend->Clear(false, true, Vector3(0.0f,0.0f,0.0f), TheWaterTransparency->m_minWaterOpacity);	// Clear z but not color
 		W3DDisplay::m_3DScene->setCustomPassMode(SCENE_PASS_DEFAULT);
 		W3DDisplay::m_3DScene->doRender( m_3DCamera );
 		Coord2D deltaScroll;
@@ -2233,7 +2238,10 @@ void W3DView::setDefaultView(Real pitch, Real angle, Real maxHeight)
 	// MDC - we no longer want to rotate maps (design made all of them right to begin with)
 	//	m_defaultAngle = angle * M_PI/180.0f;
 	setDefaultPitch(pitch);
-	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight*maxHeight;
+	// W3DNext: allow zooming out W3DNEXT_CAMERA_ZOOM_OUT_SCALE times as far as
+	// the stock camera. Because the default zoom is pinned to the max height
+	// (see setZoomToDefault), this also makes the zoomed-out view the default.
+	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight*maxHeight*W3DNEXT_CAMERA_ZOOM_OUT_SCALE;
 	if (m_minHeightAboveGround > m_maxHeightAboveGround)
 		m_maxHeightAboveGround = m_minHeightAboveGround;
 }

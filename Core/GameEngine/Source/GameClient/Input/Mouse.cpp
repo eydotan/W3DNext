@@ -53,6 +53,10 @@
 // PUBLIC DATA ////////////////////////////////////////////////////////////////////////////////////
 Mouse *TheMouse = nullptr;
 
+// W3DNext: see Mouse.h - set by the game's WinMain for unattended harness
+// runs; FALSE everywhere else, so shipping behavior is unchanged.
+Bool TheZPUnattendedHarness = FALSE;
+
 const char *const Mouse::RedrawModeName[] = {
 	"Mouse:Windows",
 	"Mouse:W3D",
@@ -1042,6 +1046,12 @@ void Mouse::initCapture()
 // ------------------------------------------------------------------------------------------------
 Bool Mouse::canCapture() const
 {
+	// W3DNext: an unattended harness run must never own the pointer -
+	// ClipCursor from an auto-launched game window confines (and swallows)
+	// a remote-desktop user's clicks machine-wide. See Mouse.h.
+	if (TheZPUnattendedHarness)
+		return false;
+
 	if (m_captureBlockReasonBits != 0)
 		return false;
 

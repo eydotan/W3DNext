@@ -65,6 +65,7 @@ void GameSlot::reset()
 	m_startPos = -1;
 	m_playerTemplate = -1;
 	m_teamNumber = -1;
+	m_strategistId = -1;   // STRATAGEM: no AI personality by default
 	m_NATBehavior = FirewallHelperClass::FIREWALL_TYPE_SIMPLE;
 	m_lastFrameInGame = 0;
 	m_disconnected = FALSE;

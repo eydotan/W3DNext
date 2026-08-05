@@ -75,6 +75,10 @@
 
 // Horrible reference, but we really, really need to know if we are windowed.
 extern bool DX8Wrapper_IsWindowed;
+// W3DNext renderer port: names the active render backend ("D3D11" vs "DX8")
+// in the crash-info header. Defined in WW3D2/Backend/RenderBackend.cpp (already
+// linked into every binary that links this file, same as DX8Wrapper_IsWindowed).
+extern bool Is_D3D11_Backend_Active();
 extern HWND ApplicationHWnd;
 
 extern const char *gAppPrefix; /// So WB can have a different log file name.
@@ -151,13 +155,22 @@ static void doStackDump();
 // ----------------------------------------------------------------------------
 inline Bool ignoringAsserts()
 {
+	// Latch the "ignore" decision: TheGlobalData is destroyed during shutdown, so the
+	// m_headless / m_debugIgnoreAsserts checks below can't be read there - which is why
+	// the shutdown memory-leak assert used to halt despite -ignoreAsserts. Once we've
+	// committed to ignoring (via an explicit flag), keep ignoring for the rest of the
+	// process. (The transient windowed-state check is NOT latched.)
+	static Bool s_ignoreLatched = false;
+	if (s_ignoreLatched)
+		return true;
+
 	if (!DX8Wrapper_IsWindowed)
 		return true;
 	if (TheGlobalData && TheGlobalData->m_headless)
-		return true;
+		{ s_ignoreLatched = true; return true; }
 #ifdef DEBUG_CRASHING
 	if (TheGlobalData && TheGlobalData->m_debugIgnoreAsserts)
-		return true;
+		{ s_ignoreLatched = true; return true; }
 #endif
 
 	return false;
@@ -786,7 +799,7 @@ void ReleaseCrash(const char *reason)
 	theReleaseCrashLogFile = fopen(curbuf, "w");
 	if (theReleaseCrashLogFile)
 	{
-		fprintf(theReleaseCrashLogFile, "Release Crash at %s; Reason %s\n", getCurrentTimeString(), reason);
+		fprintf(theReleaseCrashLogFile, "Release Crash at %s; Reason %s\nRender backend: %s\n", getCurrentTimeString(), reason, Is_D3D11_Backend_Active() ? "D3D11" : "DX8");
 		fprintf(theReleaseCrashLogFile, "\nLast error:\n%s\n\nCurrent stack:\n", g_LastErrorDump.str());
 		const int STACKTRACE_SIZE	= 12;
 		const int STACKTRACE_SKIP = 6;
@@ -874,7 +887,7 @@ void ReleaseCrashLocalized(const AsciiString& p, const AsciiString& m)
 	theReleaseCrashLogFile = fopen(curbuf, "w");
 	if (theReleaseCrashLogFile)
 	{
-		fprintf(theReleaseCrashLogFile, "Release Crash at %s; Reason %ls\n", getCurrentTimeString(), mesg.str());
+		fprintf(theReleaseCrashLogFile, "Release Crash at %s; Reason %ls\nRender backend: %s\n", getCurrentTimeString(), mesg.str(), Is_D3D11_Backend_Active() ? "D3D11" : "DX8");
 
 		const int STACKTRACE_SIZE	= 12;
 		const int STACKTRACE_SKIP = 6;

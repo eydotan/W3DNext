@@ -43,6 +43,7 @@
 #include "WW3D2/camera.h"
 #include "WW3D2/light.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/hlod.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
@@ -2361,10 +2362,15 @@ void W3DVolumetricShadow::addSilhouetteIndices(Int meshIndex, Short edgeStart, S
 //	DBGPRINTF(( "addSilhouetteIndices: Adding (%d,%d), the storage before the add is = (%d/%d)\n",
 //							edgeStart, edgeEnd, m_numSilhouetteIndices, m_maxSilhouetteEntries ));
 
+	// Clamp instead of overflow: a pathological mesh (high-poly or non-manifold imported
+	// geometry, e.g. modernized W3D buildings) can produce more silhouette edges than the
+	// buffer holds. Writing past it corrupts the heap (and asserts in debug). Skip the
+	// overflow edge - the shadow silhouette is at worst slightly truncated for that one mesh.
+	if( m_numSilhouetteIndices[meshIndex] + 2 > m_maxSilhouetteEntries[meshIndex] )
+		return;
+
 	// add to silhouette edge list
-	assert( m_numSilhouetteIndices[meshIndex] < m_maxSilhouetteEntries[meshIndex] );
 	m_silhouetteIndex[meshIndex][ m_numSilhouetteIndices[meshIndex]++ ] = edgeStart;
-	assert( m_numSilhouetteIndices[meshIndex] < m_maxSilhouetteEntries[meshIndex] );
 	m_silhouetteIndex[meshIndex][ m_numSilhouetteIndices[meshIndex]++ ] = edgeEnd;
 
 }
@@ -3274,7 +3280,7 @@ void W3DVolumetricShadow::resetShadowVolume( Int volumeIndex, Int meshIndex )
 // ============================================================================
 Bool W3DVolumetricShadow::allocateSilhouette(Int meshIndex, Int numVertices )
 {
-	Int numEntries = numVertices * 5;	///@todo: HACK, HACK... Should be 2!
+	Int numEntries = numVertices * 8;	///@todo: HACK... pad for high-poly/non-manifold meshes; addSilhouetteIndices clamps if even this overflows
 
 	// sanity
 	assert( m_silhouetteIndex[meshIndex] == nullptr &&
@@ -3432,13 +3438,13 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 
 		//Set W3D to some known state
 		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(vmat);
+		g_renderBackend->Set_Material(vmat);
 		REF_PTR_RELEASE(vmat);
 
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Set_Texture(0,nullptr);	//turn off textures
-		DX8Wrapper::Set_Texture(1,nullptr);	//turn off textures
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+		g_renderBackend->Set_Shader(ShaderClass::_PresetOpaqueShader);
+		g_renderBackend->Set_Texture(0,nullptr);	//turn off textures
+		g_renderBackend->Set_Texture(1,nullptr);	//turn off textures
+		g_renderBackend->Apply_Render_State_Changes();	//force update of view and projection matrices
 
 		// turn off z writing
 		m_pDev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
@@ -3607,7 +3613,7 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 		m_pDev->SetRenderState(D3DRS_ALPHABLENDENABLE , FALSE);
 		m_pDev->SetRenderState(D3DRS_LIGHTING, FALSE);
 
-		DX8Wrapper::Invalidate_Cached_Render_States();
+		g_renderBackend->Invalidate_Cached_Render_States();
 	}
 	else
 	if (forceStencilFill)
@@ -3616,15 +3622,15 @@ void W3DVolumetricShadowManager::renderShadows( Bool forceStencilFill )
 
 		//Set W3D to some known state
 		VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-		DX8Wrapper::Set_Material(vmat);
+		g_renderBackend->Set_Material(vmat);
 		REF_PTR_RELEASE(vmat);
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Set_Texture(0,nullptr);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+		g_renderBackend->Set_Shader(ShaderClass::_PresetOpaqueShader);
+		g_renderBackend->Set_Texture(0,nullptr);
+		g_renderBackend->Apply_Render_State_Changes();	//force update of view and projection matrices
 
 		renderStencilShadows();
 
-		DX8Wrapper::Invalidate_Cached_Render_States();
+		g_renderBackend->Invalidate_Cached_Render_States();
 	}
 
 }
@@ -3799,8 +3805,18 @@ void W3DVolumetricShadowManager::reset()
 // ============================================================================
 W3DVolumetricShadow* W3DVolumetricShadowManager::addShadow(RenderObjClass *robj, Shadow::ShadowTypeInfo *shadowInfo, Drawable *draw)
 {
-	if (!DX8Wrapper::Has_Stencil() || !robj || !TheGlobalData->m_useShadowVolumes)
+	if (!g_renderBackend->Has_Stencil() || !robj || !TheGlobalData->m_useShadowVolumes)
 		return nullptr;	//right now we require a stencil buffer
+
+	// W3DNext renderer port: the stencil-volume renderer is raw D3D8
+	// end-to-end (~300 raw states + W3DBufferManager raw draws) - under D3D11
+	// every volume vanished into the never-presented device while still paying
+	// the per-frame extrusion cost. Until the backend grows stencil + colorwrite
+	// state (ledgered in the parity log), take the engine's own no-3D-shadows
+	// state explicitly: volume-typed objects get no shadow, exactly like the
+	// shipped UseShadowVolumes=No mode on DX8.
+	if (Is_D3D11_Backend_Active())
+		return nullptr;
 
 	W3DShadowGeometry *sg=nullptr;
 	if (!robj)

@@ -34,6 +34,7 @@
 enum { INVALID_SKILLSET_SELECTION = -1 };
 
 class BuildListInfo;
+class StratagemStrategist;		///< STRATAGEM: optional per-AI personality/planner (P2.2)
 
 /**
  * When a team is selected for training, a list of these
@@ -207,6 +208,10 @@ public:
 
 	void setTeamDelaySeconds(Int delay) {m_teamSeconds = delay;}
 
+	/// STRATAGEM: attach/read the per-AI Strategist (personality + planner). NULL = stock AI.
+	void setStratagem(StratagemStrategist *s) {m_stratagem = s;}
+	StratagemStrategist *getStratagem() const {return m_stratagem;}
+
 	/// Calculates the closest construction zone location based on a template.
 	Bool calcClosestConstructionZoneLocation( const ThingTemplate *constructTemplate, Coord3D *location );
 
@@ -290,4 +295,6 @@ protected:
 	ObjectID m_attackedSupplyCenter;
 
 	ObjectID m_curWarehouseID;
+
+	StratagemStrategist *m_stratagem;	///< STRATAGEM: optional personality/planner; NULL = unchanged stock AI.
 };

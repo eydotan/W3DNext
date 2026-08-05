@@ -114,6 +114,7 @@ static NameKeyType windowMapID = NAMEKEY_INVALID;
 static NameKeyType sliderGameSpeedID = NAMEKEY_INVALID;
 static NameKeyType staticTextGameSpeedID = NAMEKEY_INVALID;
 static NameKeyType checkBoxLimitSuperweaponsID = NAMEKEY_INVALID;
+static NameKeyType checkBoxNoSuperweaponsID = NAMEKEY_INVALID;
 static NameKeyType comboBoxStartingCashID = NAMEKEY_INVALID;
 
 // Window Pointers ------------------------------------------------------------------------
@@ -127,6 +128,7 @@ static GameWindow *buttonReset = nullptr;
 static GameWindow *windowMap = nullptr;
 static GameWindow *textEntryPlayerName = nullptr;
 static GameWindow *checkBoxLimitSuperweapons = nullptr;
+static GameWindow *checkBoxNoSuperweapons = nullptr;
 static GameWindow *comboBoxStartingCash = nullptr;
 static GameWindow *comboBoxPlayer[MAX_SLOTS] = {0};
 
@@ -313,6 +315,25 @@ void SkirmishPreferences::setSuperweaponRestricted( Bool superweaponRestricted )
   (*this)[superweaponRestrictionKey] = superweaponRestricted ? "Yes" : "No";
 }
 
+// W3DNext: "No Superweapons" preference (blocks superweapon structures entirely)
+static const char noSuperweaponsKey[] = "NoSuperweapons";
+
+Bool SkirmishPreferences::getNoSuperweapons() const
+{
+  const_iterator it = find(noSuperweaponsKey);
+  if (it == end())
+  {
+    return false;
+  }
+
+  return ( it->second.compareNoCase( "yes" ) == 0 );
+}
+
+void SkirmishPreferences::setNoSuperweapons( Bool noSuperweapons )
+{
+  (*this)[noSuperweaponsKey] = noSuperweapons ? "Yes" : "No";
+}
+
 static const char startingCashKey[] = "StartingCash";
 Money SkirmishPreferences::getStartingCash() const
 {
@@ -357,7 +378,8 @@ Bool SkirmishPreferences::write()
 	(*this)["UserName"] = UnicodeStringToQuotedPrintable(TheSkirmishGameInfo->getConstSlot(0)->getName());
 
   setStartingCash( TheSkirmishGameInfo->getStartingCash() );
-  setSuperweaponRestricted( TheSkirmishGameInfo->getSuperweaponRestriction() != 0 );
+  setSuperweaponRestricted( TheSkirmishGameInfo->getSuperweaponRestriction() == 1 );
+  setNoSuperweapons( TheSkirmishGameInfo->getSuperweaponRestriction() == GameLogic::SUPERWEAPON_RESTRICTION_NONE );
 
 	setSlotList();
 
@@ -1003,11 +1025,33 @@ static void handleLimitSuperweaponsClick()
 
   if (myGame)
   {
-    // At the moment, 1 and 0 are the only choices supported in the GUI, though the system could
-    // support more.
     if ( GadgetCheckBoxIsChecked( checkBoxLimitSuperweapons ) )
     {
       myGame->setSuperweaponRestriction( 1 );
+      // W3DNext: "Limit" and "No Superweapons" are mutually exclusive
+      if ( checkBoxNoSuperweapons )
+        GadgetCheckBoxSetChecked( checkBoxNoSuperweapons, FALSE );
+    }
+    else
+    {
+      myGame->setSuperweaponRestriction( 0 );
+    }
+  }
+}
+
+// W3DNext: "No Superweapons" checkbox - blocks superweapon structures entirely
+static void handleNoSuperweaponsClick()
+{
+  GameInfo *myGame = TheSkirmishGameInfo;
+
+  if (myGame)
+  {
+    if ( GadgetCheckBoxIsChecked( checkBoxNoSuperweapons ) )
+    {
+      myGame->setSuperweaponRestriction( GameLogic::SUPERWEAPON_RESTRICTION_NONE );
+      // mutually exclusive with the limit-to-one option
+      if ( checkBoxLimitSuperweapons )
+        GadgetCheckBoxSetChecked( checkBoxLimitSuperweapons, FALSE );
     }
     else
     {
@@ -1032,6 +1076,7 @@ void InitSkirmishGameGadgets()
 	windowMapID = TheNameKeyGenerator->nameToKey( "SkirmishGameOptionsMenu.wnd:MapWindow" );
 	staticTextGameSpeedID = TheNameKeyGenerator->nameToKey( "SkirmishGameOptionsMenu.wnd:StaticTextGameSpeed" );
   checkBoxLimitSuperweaponsID = TheNameKeyGenerator->nameToKey( "SkirmishGameOptionsMenu.wnd:CheckboxLimitSuperweapons" );
+  checkBoxNoSuperweaponsID = TheNameKeyGenerator->nameToKey( "SkirmishGameOptionsMenu.wnd:CheckboxNoSuperweapons" );
   comboBoxStartingCashID = TheNameKeyGenerator->nameToKey( "SkirmishGameOptionsMenu.wnd:ComboBoxStartingCash" );
 
 	// Initialize the pointers to our gadgets
@@ -1051,6 +1096,8 @@ void InitSkirmishGameGadgets()
 	DEBUG_ASSERTCRASH(staticTextGameSpeed, ("Could not find the staticTextGameSpeed"));
   checkBoxLimitSuperweapons = TheWindowManager->winGetWindowFromId( parentSkirmishGameOptions, checkBoxLimitSuperweaponsID );
   DEBUG_ASSERTCRASH(checkBoxLimitSuperweapons, ("Could not find the checkBoxLimitSuperweapons"));
+  checkBoxNoSuperweapons = TheWindowManager->winGetWindowFromId( parentSkirmishGameOptions, checkBoxNoSuperweaponsID );
+  DEBUG_ASSERTCRASH(checkBoxNoSuperweapons, ("Could not find the checkBoxNoSuperweapons"));
   comboBoxStartingCash = TheWindowManager->winGetWindowFromId( parentSkirmishGameOptions, comboBoxStartingCashID );
   DEBUG_ASSERTCRASH(comboBoxStartingCash, ("Could not find the comboBoxStartingCash"));
   PopulateStartingCashComboBox(comboBoxStartingCash, TheSkirmishGameInfo );

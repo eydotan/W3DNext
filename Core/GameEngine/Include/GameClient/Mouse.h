@@ -437,3 +437,13 @@ class MouseDummy : public Mouse
 
 // EXTERNALS //////////////////////////////////////////////////////////////////
 extern Mouse *TheMouse;  ///< extern mouse singleton definition
+
+// W3DNext: TRUE while an unattended harness mode (-stratagemShot /
+// -navalShot / -navalSandbox) drives the game. Set by the game's WinMain
+// after the command line is parsed; lives here (not GlobalData) because the
+// consumers are shared Core code and only Zero Hour's GlobalData carries the
+// harness fields. When set, the app must behave as a quiet background
+// process: never ClipCursor/capture the pointer and never steal focus - a
+// harness run was pinning the pointer inside the game window and locking a
+// remote-desktop user out of their own machine until the watchdog fired.
+extern Bool TheZPUnattendedHarness;

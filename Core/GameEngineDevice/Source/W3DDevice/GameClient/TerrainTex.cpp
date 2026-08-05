@@ -71,6 +71,9 @@ TerrainTextureClass::TerrainTextureClass(int height) :
 	TextureClass(TEXTURE_WIDTH, height,
 		WW3D_FORMAT_A1R5G5B5, MIP_LEVELS_3 )
 {
+	// Written only by update()/updateFlat() at creation; every refresh path
+	// recreates the instance (see Is_Procedural_Cacheable in texture.h).
+	Set_Procedural_Cacheable(true);
 }
 
 //=============================================================================
@@ -83,6 +86,7 @@ TerrainTextureClass::TerrainTextureClass(int height, int width) :
 	TextureClass(width, height,
 		WW3D_FORMAT_A1R5G5B5, MIP_LEVELS_ALL )
 {
+	Set_Procedural_Cacheable(true);
 }
 
 
@@ -492,6 +496,9 @@ AlphaTerrainTextureClass::AlphaTerrainTextureClass( TextureClass *pBaseTex ):
 	// Attach the base texture's d3d texture.
 	IDirect3DTexture8 * d3d_tex = pBaseTex->Peek_D3D_Texture();
 	Set_D3D_Base_Texture(d3d_tex);
+	// Aliases the base terrain texture's bytes, which are create-once (the
+	// attach above bumped this texture's generation).
+	Set_Procedural_Cacheable(true);
 }
 
 
@@ -759,7 +766,7 @@ AlphaEdgeTextureClass::AlphaEdgeTextureClass( int height, MipCountType mipLevelC
 //	TextureClass("EdgingTemplate.tga","EdgingTemplate.tga", mipLevelCount )
 	TextureClass(TEXTURE_WIDTH, height, WW3D_FORMAT_A8R8G8B8, mipLevelCount )
 {
-
+	Set_Procedural_Cacheable(true);
 }
 
 int AlphaEdgeTextureClass::update256(WorldHeightMap *htMap)

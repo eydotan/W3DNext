@@ -136,6 +136,14 @@ public:
 	static void _Set_Default_Mag_Filter(FilterType filter);
 	static void _Set_Default_Mip_Filter(FilterType filter);
 
+	// W3DNext renderer port: the RESOLVED device mip filter (a D3DTEXF_*
+	// value) the DX8 path would apply for `type` at stage 0, exactly as
+	// _Init_Filters filled the mode tables (e.g. under TEXTURE_FILTER_BILINEAR
+	// even FILTER_TYPE_BEST resolves to D3DTEXF_POINT). Read-only; lets the
+	// D3D11 backend build its samplers from the same tables instead of
+	// guessing. DX8 behavior untouched.
+	static unsigned _Get_Resolved_Mip_Filter(FilterType type);
+
 private:
 	// State not contained in the Direct3D texture object:
 	FilterType TextureMinFilter;

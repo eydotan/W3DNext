@@ -22,6 +22,7 @@
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "GameClient/View.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/rinfo.h"
 #include "WW3D2/camera.h"
 #include "WW3D2/assetmgr.h"
@@ -392,12 +393,12 @@ void W3DSnowManager::render(RenderInfoClass &rinfo)
 	m_heightTraveled=m_time*m_velocity+cameraOffset;	//height that snow flake traveled this frame.
 
 	Matrix4x4 identity(true);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,identity);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,identity);
 
-	DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaShader);
+	g_renderBackend->Set_Shader(ShaderClass::_PresetAlphaShader);
 
 	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
+	g_renderBackend->Set_Material(vmat);
 	REF_PTR_RELEASE(vmat);
 
 	//make sure we have all the resources we need
@@ -407,7 +408,7 @@ void W3DSnowManager::render(RenderInfoClass &rinfo)
 	if (!usePointSprites && !m_indexBuffer)
 		ReAcquireResources();
 
-	DX8Wrapper::Set_Texture(0,m_snowTexture);
+	g_renderBackend->Set_Texture(0,m_snowTexture);
 
 	if (!usePointSprites)
 	{
@@ -417,7 +418,7 @@ void W3DSnowManager::render(RenderInfoClass &rinfo)
 
 	Vector3 snowCenter;
 
-	DX8Wrapper::Apply_Render_State_Changes();
+	g_renderBackend->Apply_Render_State_Changes();
 
     // Set the render states for using point sprites
 	DX8Wrapper::Set_DX8_Render_State( D3DRS_POINTSPRITEENABLE, TRUE );
@@ -483,9 +484,9 @@ void W3DSnowManager::renderAsQuads(RenderInfoClass &rinfo, Int cubeOriginX, Int 
 	}
 
 	Matrix4x4 identity(true);
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,identity);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_VIEW,identity);
 
-	DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
+	g_renderBackend->Set_Index_Buffer(m_indexBuffer,0);
 
 	Int y=cubeOriginY;	//loop counter.
 	Int cubeOriginXRemainder = cubeOriginX;	//loop counter - adjusted when not all particles fit into render buffer.
@@ -563,8 +564,8 @@ flush_particles:
 		//Render any particles that may be queued up.
 		if (numberInBatch)
 		{
-			DX8Wrapper::Set_Vertex_Buffer(vb_access);
-			DX8Wrapper::Draw_Triangles(	0,numberInBatch*2, 0, numberInBatch*4);
+			g_renderBackend->Set_Vertex_Buffer(vb_access);
+			g_renderBackend->Draw_Triangles(	0,numberInBatch*2, 0, numberInBatch*4);
 			totalPart -= numberInBatch;
 		}
 	}

@@ -63,6 +63,7 @@
 #include "simplevec.h"
 #include "texture.h"
 #include "dx8wrapper.h"
+#include "Backend/RenderBackend.h"
 
 #define DISABLE_CLIPPING	0
 
@@ -297,7 +298,7 @@ void RigidDecalMeshClass::Render()
 	** transform between the time that the mesh is rendered and the time that the decal
 	** mesh is rendered...  It shouldn't happen though.
 	*/
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Parent->Get_Transform());
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,Parent->Get_Transform());
 
 	/*
 	** Copy the vertices into the dynamic vb
@@ -353,9 +354,9 @@ void RigidDecalMeshClass::Render()
 	while (next_poly_index < Polys.Count()) {
 		next_poly_index = Process_Material_Run(cur_poly_index);
 
-		DX8Wrapper::Set_Index_Buffer(dynamic_ib,0);
-		DX8Wrapper::Set_Vertex_Buffer(dynamic_vb);
-		DX8Wrapper::Draw_Triangles(	3*cur_poly_index,
+		g_renderBackend->Set_Index_Buffer(dynamic_ib,0);
+		g_renderBackend->Set_Vertex_Buffer(dynamic_vb);
+		g_renderBackend->Draw_Triangles(	3*cur_poly_index,
 												(next_poly_index - cur_poly_index), // poly count
 												Polys[cur_poly_index].I,
 												1 + Polys[next_poly_index-1].K - Polys[cur_poly_index].I);
@@ -382,9 +383,9 @@ void RigidDecalMeshClass::Render()
  *=============================================================================================*/
 int RigidDecalMeshClass::Process_Material_Run(int start_index)
 {
-	DX8Wrapper::Set_Texture(0,Textures[start_index]);
-	DX8Wrapper::Set_Material(VertexMaterials[Polys[start_index].I]);
-	DX8Wrapper::Set_Shader(Shaders[start_index]);
+	g_renderBackend->Set_Texture(0,Textures[start_index]);
+	g_renderBackend->Set_Material(VertexMaterials[Polys[start_index].I]);
+	g_renderBackend->Set_Shader(Shaders[start_index]);
 
 	int next_index = start_index;
 	while (	(next_index < Polys.Count()) &&
@@ -786,7 +787,7 @@ void SkinDecalMeshClass::Render()
 	/*
 	** Skin decals coordinates are in world space
 	*/
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Matrix3D::Identity);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,Matrix3D::Identity);
 
 	/*
 	** Skin decals have to get the deformed vertices of their parent meshes.  For this
@@ -850,9 +851,9 @@ void SkinDecalMeshClass::Render()
 	while (next_poly_index < Polys.Count()) {
 		next_poly_index = Process_Material_Run(cur_poly_index);
 
-		DX8Wrapper::Set_Index_Buffer(dynamic_ib,0);
-		DX8Wrapper::Set_Vertex_Buffer(dynamic_vb);
-		DX8Wrapper::Draw_Triangles(3*cur_poly_index,
+		g_renderBackend->Set_Index_Buffer(dynamic_ib,0);
+		g_renderBackend->Set_Vertex_Buffer(dynamic_vb);
+		g_renderBackend->Draw_Triangles(3*cur_poly_index,
 											(next_poly_index - cur_poly_index), // poly count
 											Polys[cur_poly_index].I,
 											1 + Polys[next_poly_index-1].K - Polys[cur_poly_index].I);
@@ -879,9 +880,9 @@ void SkinDecalMeshClass::Render()
  *=============================================================================================*/
 int SkinDecalMeshClass::Process_Material_Run(int start_index)
 {
-	DX8Wrapper::Set_Texture(0,Textures[start_index]);
-	DX8Wrapper::Set_Material(VertexMaterials[Polys[start_index].I]);
-	DX8Wrapper::Set_Shader(Shaders[start_index]);
+	g_renderBackend->Set_Texture(0,Textures[start_index]);
+	g_renderBackend->Set_Material(VertexMaterials[Polys[start_index].I]);
+	g_renderBackend->Set_Shader(Shaders[start_index]);
 
 	int next_index = start_index;
 	while (	(next_index < Polys.Count()) &&

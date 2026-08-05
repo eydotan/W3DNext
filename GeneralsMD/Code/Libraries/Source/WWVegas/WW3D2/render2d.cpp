@@ -48,6 +48,7 @@
 #include "matrix4.h"
 #include "matrix3d.h"
 #include "dx8wrapper.h"
+#include "Backend/RenderBackend.h"
 #include "dx8indexbuffer.h"
 #include "dx8vertexbuffer.h"
 #include "sortingrenderer.h"
@@ -606,8 +607,8 @@ void Render2DClass::Render()
 	Matrix4x4 view,proj;
 	Matrix4x4 identity(true);
 
-	DX8Wrapper::Get_Transform(D3DTS_VIEW,view);
-	DX8Wrapper::Get_Transform(D3DTS_PROJECTION,proj);
+	g_renderBackend->Get_Transform(RB_TRANSFORM_VIEW,view);
+	g_renderBackend->Get_Transform(RB_TRANSFORM_PROJECTION,proj);
 
 	//
 	//	Configure the viewport for entire screen
@@ -615,23 +616,23 @@ void Render2DClass::Render()
 	int width, height, bits;
 	bool windowed;
 	WW3D::Get_Device_Resolution( width, height, bits, windowed );
-	D3DVIEWPORT8 vp = { 0 };
-	vp.X			= 0;
-	vp.Y			= 0;
-	vp.Width		= width;
-	vp.Height	= height;
-	vp.MinZ		= 0;
-	vp.MaxZ		= 1;
-	DX8Wrapper::Set_Viewport(&vp);
-	DX8Wrapper::Set_Texture(0,Texture);
+	RenderBackendViewport vp = { 0 };
+	vp.x			= 0;
+	vp.y			= 0;
+	vp.width		= width;
+	vp.height	= height;
+	vp.min_z	= 0;
+	vp.max_z	= 1;
+	g_renderBackend->Set_Viewport(vp);
+	g_renderBackend->Set_Texture(0,Texture);
 
 	VertexMaterialClass *vm=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vm);
+	g_renderBackend->Set_Material(vm);
 	REF_PTR_RELEASE(vm);
 
-	DX8Wrapper::Set_World_Identity();
-	DX8Wrapper::Set_View_Identity();
-	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,identity);
+	g_renderBackend->Set_World_Identity();
+	g_renderBackend->Set_View_Identity();
+	g_renderBackend->Set_Transform(RB_TRANSFORM_PROJECTION,identity);
 
 	DynamicVBAccessClass vb(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,Vertices.Count());
 	{
@@ -658,13 +659,14 @@ void Render2DClass::Render()
 			mem[i]=Indices[i];
 	}
 
-	DX8Wrapper::Set_Vertex_Buffer(vb);
-	DX8Wrapper::Set_Index_Buffer(ib,0);
+	g_renderBackend->Set_Vertex_Buffer(vb);
+	g_renderBackend->Set_Index_Buffer(ib,0);
 
 	if (IsGrayScale)
 	{	//special case added to draw grayscale non-alpha blended images.
-		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
-		DX8Wrapper::Apply_Render_State_Changes();	//force update of all regular W3D states.
+		g_renderBackend->Set_Shader(ShaderClass::_PresetOpaqueShader);
+		g_renderBackend->Apply_Render_State_Changes();	//force update of all regular W3D states.
+		RB_Mirror_Grayscale2D(true);	//D3D11: the DX8 stage states below never reach that backend
 		if (DX8Wrapper::Get_Current_Caps()->Support_Dot3())
 		{	//Override W3D states with customizations for grayscale
 			DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, 0x80A5CA8E);
@@ -689,13 +691,16 @@ void Render2DClass::Render()
 		}
 	}
 	else
-		DX8Wrapper::Set_Shader(Shader);
-	DX8Wrapper::Draw_Triangles(0,Indices.Count()/3,0,Vertices.Count());
+		g_renderBackend->Set_Shader(Shader);
+	g_renderBackend->Draw_Triangles(0,Indices.Count()/3,0,Vertices.Count());
 
-	DX8Wrapper::Set_Transform(D3DTS_VIEW,view);
-	DX8Wrapper::Set_Transform(D3DTS_PROJECTION,proj);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_VIEW,view);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_PROJECTION,proj);
 	if (IsGrayScale)
+	{
+		RB_Mirror_Grayscale2D(false);
 		ShaderClass::Invalidate();	//force both stages to be reset.
+	}
 
 }
 

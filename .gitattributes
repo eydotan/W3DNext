@@ -1,0 +1,2 @@
+# W3DNext - large 3D source binaries via Git LFS (source meshes for building remasters)
+*.glb filter=lfs diff=lfs merge=lfs -text

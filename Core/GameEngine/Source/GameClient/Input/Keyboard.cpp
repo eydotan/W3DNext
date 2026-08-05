@@ -32,8 +32,13 @@
 #include "Common/Language.h"
 #include "Common/GameEngine.h"
 #include "Common/MessageStream.h"
+#include "GameClient/Display.h"		// W3DNext: F9 screenshot hotkey
 #include "GameClient/Keyboard.h"
 #include "GameClient/KeyDefs.h"
+
+#ifdef _WIN32
+#include <windows.h>				// W3DNext: F10 immediate-quit hotkey (ExitProcess)
+#endif
 
 
 // PUBLIC DATA ////////////////////////////////////////////////////////////////////////////////////
@@ -58,6 +63,37 @@ void Keyboard::createStreamMessages()
 	GameMessage *msg = nullptr;
 	while( key->key != KEY_NONE )
 	{
+
+		// W3DNext developer hotkeys. Handled here at the raw-input level so they
+		// work everywhere (menus and in-game) without depending on CommandMap.ini
+		// bindings, and are CONSUMED here (we skip emitting a raw key message) so
+		// they never reach the command system - e.g. F9 no longer also toggles the
+		// control bar. Fire once on the initial press (ignore autorepeat / key-up).
+		//   F9  - take a screenshot (saved to the project's scrshots folder)
+		//   F10 - quit the game immediately
+		if( key->key == KEY_F9 || key->key == KEY_F10 )
+		{
+			if( BitIsSet( key->state, KEY_STATE_DOWN ) && !BitIsSet( key->state, KEY_STATE_AUTOREPEAT ) )
+			{
+				if( key->key == KEY_F9 )
+				{
+					if( TheDisplay != nullptr )
+						TheDisplay->takeScreenShot();
+				}
+				else // KEY_F10
+				{
+#ifdef _WIN32
+					ExitProcess( 0 );
+#else
+					exit( 0 );
+#endif
+				}
+			}
+			// consume the key so it does not reach the message stream / command map
+			key->setUsed();
+			key++;
+			continue;
+		}
 
 		// add message to stream
 		if( BitIsSet( key->state, KEY_STATE_DOWN ) )

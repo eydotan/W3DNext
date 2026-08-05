@@ -59,6 +59,7 @@
 #include "WW3D2/dx8indexbuffer.h"
 #include "WW3D2/dx8vertexbuffer.h"
 #include "WW3D2/vertmaterial.h"
+#include "WW3D2/Backend/RenderBackend.h"
 class DebugHintObject : public RenderObjClass
 {
 
@@ -240,18 +241,18 @@ void DebugHintObject::Render(RenderInfoClass & rinfo)
 	SphereClass bounds(Vector3(m_myLoc.x, m_myLoc.y, m_myLoc.z), m_mySize);
 	if (!rinfo.Camera.Cull_Sphere(bounds))
 	{
-		DX8Wrapper::Set_Material(m_vertexMaterialClass);
-		DX8Wrapper::Set_Shader(m_shaderClass);
-		DX8Wrapper::Set_Texture(0, nullptr);
-		DX8Wrapper::Set_Index_Buffer(m_indexBuffer,0);
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferTile);
+		g_renderBackend->Set_Material(m_vertexMaterialClass);
+		g_renderBackend->Set_Shader(m_shaderClass);
+		g_renderBackend->Set_Texture(0, nullptr);
+		g_renderBackend->Set_Index_Buffer(m_indexBuffer,0);
+		g_renderBackend->Set_Vertex_Buffer(m_vertexBufferTile);
 
 		Matrix3D tm(Transform);
 		Vector3 vec(m_myLoc.x, m_myLoc.y, m_myLoc.z);
 		tm.Set_Translation(vec);
-		DX8Wrapper::Set_Transform(D3DTS_WORLD, tm);
+		g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD, tm);
 
-		DX8Wrapper::Draw_Triangles(	0, 1, 0, 3);
+		g_renderBackend->Draw_Triangles(	0, 1, 0, 3);
 	}
 }
 #endif // RTS_DEBUG

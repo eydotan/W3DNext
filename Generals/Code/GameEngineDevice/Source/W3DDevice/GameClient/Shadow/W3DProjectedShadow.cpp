@@ -37,6 +37,7 @@
 #include "WW3D2/camera.h"
 #include "WW3D2/light.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/hlod.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
@@ -624,14 +625,14 @@ static void RenderVBTile(TextureClass *text, Real ox, Real oy, Real ou, Real ov,
 		ib[4]=0;
 	}
 
-	DX8Wrapper::Set_Index_Buffer(ib_access,0);
-	DX8Wrapper::Set_Vertex_Buffer(vb_access);
-	DX8Wrapper::Set_Texture(0, text);
+	g_renderBackend->Set_Index_Buffer(ib_access,0);
+	g_renderBackend->Set_Vertex_Buffer(vb_access);
+	g_renderBackend->Set_Texture(0, text);
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA );
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA  );
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, TRUE );
 	ShaderClass::Invalidate();	//invalidate to force shader to reset since we directly changed states
-	DX8Wrapper::Draw_Triangles(	0,2, 0,	4);	//draw a quad, 2 triangles, 4 verts
+	g_renderBackend->Draw_Triangles(	0,2, 0,	4);	//draw a quad, 2 triangles, 4 verts
 }
 
 //Debug code used to draw some dummy polygons.
@@ -647,12 +648,12 @@ void TestBlendRender(RenderInfoClass & rinfo)
 	}
 
 	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
+	g_renderBackend->Set_Material(vmat);
 	REF_PTR_RELEASE(vmat);
-	DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
+	g_renderBackend->Set_Shader(ShaderClass::_PresetOpaqueShader);
 
 	Matrix3D tm(1);	//identity
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,tm);
 
 	//grass
 	RenderVBTile(grass,580.0f,480.0f,0.0f,0.0f);	RenderVBTile(grass,590.0f,480.0f,0.25f,0.0f);
@@ -686,21 +687,21 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 	if (!m_pDev)	return;	//no D3D Device to render
 
 	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
+	g_renderBackend->Set_Material(vmat);
 	REF_PTR_RELEASE(vmat);
-	DX8Wrapper::Set_Texture(0,texture->getTexture());
+	g_renderBackend->Set_Texture(0,texture->getTexture());
 
 //	DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);	//good for debugging, draws without alpha
 	switch (type)
 	{
 		case SHADOW_DECAL:
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetMultiplicativeShader);
+			g_renderBackend->Set_Shader(ShaderClass::_PresetMultiplicativeShader);
 			break;
 		case SHADOW_ALPHA_DECAL:
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaShader);
+			g_renderBackend->Set_Shader(ShaderClass::_PresetAlphaShader);
 			break;
 		case SHADOW_ADDITIVE_DECAL:
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetAdditiveShader);
+			g_renderBackend->Set_Shader(ShaderClass::_PresetAdditiveShader);
 			break;
 	}
 
@@ -708,7 +709,7 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 //	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHAFUNC,D3DCMP_GREATEREQUAL);
 	//_PresetAlphaSpriteShader
 
-	DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+	g_renderBackend->Apply_Render_State_Changes();	//force update of view and projection matrices
 
 //Alpha Blended Shadows
 //	m_pDev->SetRenderState( D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA );
@@ -1380,7 +1381,7 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 
 					//terrain is always visible and affected by all shadows so must render
 					projector->Peek_Material_Pass()->Install_Materials();
-					DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+					g_renderBackend->Apply_Render_State_Changes();	//force update of view and projection matrices
 					if (renderProjectedTerrainShadow(shadow, aaBox))
 						projectionCount++;
 					projector->Peek_Material_Pass()->UnInstall_Materials();

@@ -90,6 +90,7 @@ set(_state_variable_names
     GIT_HEAD_SHORT_SHA1
     GIT_REV_LIST_COUNT
     GIT_TAG
+    GIT_BRANCH
     # >>>
     # 1. Add the name of the additional git variable you're interested in monitoring
     #    to this list.
@@ -208,7 +209,15 @@ function(GetGitState _working_dir)
         else()
             set(ENV{GIT_TAG} "")
         endif()
-        
+
+        # W3DNext: current branch name ("HEAD" when detached).
+        RunGitCommand(rev-parse --abbrev-ref HEAD)
+        if(exit_code EQUAL 0)
+            set(ENV{GIT_BRANCH} ${output})
+        else()
+            set(ENV{GIT_BRANCH} "")
+        endif()
+
         # >>>
         # 2. Additional git properties can be added here via the
         #    "execute_process()" command. Be sure to set them in
@@ -226,6 +235,7 @@ function(GetGitState _working_dir)
         set(ENV{GIT_HEAD_SHORT_SHA1} "DEADBEEF")
         set(ENV{GIT_REV_LIST_COUNT} "0")
         set(ENV{GIT_TAG} "")
+        set(ENV{GIT_BRANCH} "")
     endif()
 
 endfunction()

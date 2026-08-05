@@ -73,6 +73,11 @@
 
 #include "GameLogic/Armor.h"
 #include "GameLogic/AI.h"
+#include "GameLogic/Stratagem/StratagemBrain.h"
+#include "GameLogic/Stratagem/StratagemStrategist.h"   // STRATAGEM: -stratagemSeed + persona-to-first-AI
+#include "GameLogic/Stratagem/StratagemTemplates.h"     // STRATAGEM: roster-index-by-name for the opponent flag
+#include "GameNetwork/GameInfo.h"      // STRATAGEM auto-capture: skirmish setup
+#include "GameClient/Display.h"        // STRATAGEM auto-capture: takeScreenShot()
 #include "GameLogic/CaveSystem.h"
 #include "GameLogic/CrateSystem.h"
 #include "GameLogic/Damage.h"
@@ -84,6 +89,16 @@
 #include "GameLogic/RankInfo.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/SidesList.h"
+#include "GameLogic/Object.h"                 // NAVAL: spawn + query the test gunboat
+#include "GameLogic/TerrainLogic.h"           // NAVAL: isUnderwater()/getExtent() water probing
+#include "GameLogic/Module/AIUpdate.h"        // NAVAL: aiMoveToPosition() programmatic move order
+#include "GameLogic/Module/ProductionUpdate.h" // NAVAL sandbox: queueCreateUnit() at a War Factory
+#include "Common/Player.h"                    // NAVAL: local player's default team
+#include "Common/PlayerList.h"                // NAVAL sandbox: iterate players
+#include "Common/Money.h"                     // NAVAL sandbox: deposit cash
+#include "Common/KindOf.h"                    // NAVAL sandbox: KINDOF_STRUCTURE
+#include "Common/ThingTemplate.h"             // NAVAL: ChinaGunboat template lookup
+#include "GameClient/View.h"                  // NAVAL sandbox: TheTacticalView->lookAt() the lake
 
 #include "GameClient/ClientInstance.h"
 #include "GameClient/FXList.h"
@@ -107,6 +122,7 @@
 #include "GameNetwork/GameSpy/GameResultsThread.h"
 
 #include "Common/version.h"
+#include "gitinfo.h"
 
 
 //-------------------------------------------------------------------------------------------------
@@ -227,6 +243,22 @@ static void updateWindowTitle()
 		title.concat(gameTitleFinal.str());
 		title.concat(L" ");
 		title.concat(gameVersion.str());
+	}
+
+	// W3DNext: stamp the source git branch (and '*' when built from a
+	// dirty tree) into the window title so game windows launched from
+	// different worktree builds (e.g. main vs renderer-d3d11) are
+	// distinguishable in the taskbar and alt-tab list. (Not gated on
+	// GitHaveInfo: that flag is false whenever any optional git probe fails —
+	// e.g. `git describe --tags` in a tagless repo — while the branch probe
+	// itself has an empty-string fallback that this check already covers.)
+	if (GitBranch[0] != '\0')
+	{
+		UnicodeString branchU;
+		branchU.translate(AsciiString(GitBranch));
+		UnicodeString branchTag;
+		branchTag.format(L" [%ls%ls]", branchU.str(), GitUncommittedChanges ? L"*" : L"");
+		title.concat(branchTag);
 	}
 
 	if (!title.isEmpty())
@@ -609,6 +641,9 @@ void GameEngine::init()
 
 
 		initSubsystem(TheAI,"TheAI", MSGNEW("GameEngineSubsystem") AI(), &xferCRC,  "Data\\INI\\Default\\AIData", "Data\\INI\\AIData");
+		// Project STRATAGEM strategic-AI subsystem. No INI/save state (the world model
+		// is recomputable); ships disabled, so this is inert until task D2.
+		initSubsystem(TheStratagemBrain,"TheStratagemBrain", MSGNEW("GameEngineSubsystem") StratagemBrain(), nullptr);
 		initSubsystem(TheGameLogic,"TheGameLogic", createGameLogic(), nullptr);
 		initSubsystem(TheTeamFactory,"TheTeamFactory", MSGNEW("GameEngineSubsystem") TeamFactory(), nullptr);
 		initSubsystem(TheCrateSystem,"TheCrateSystem", MSGNEW("GameEngineSubsystem") CrateSystem(), &xferCRC, "Data\\INI\\Default\\Crate", "Data\\INI\\Crate");
@@ -729,6 +764,115 @@ void GameEngine::init()
 				msg->appendIntegerArgument(DIFFICULTY_NORMAL);
 				msg->appendIntegerArgument(0);
 				InitRandom(0);
+			}
+		}
+
+		// Project STRATAGEM auto-capture (-stratagemShot): construct an AI skirmish
+		// (local idle human vs. one Brutal AI) without the menus and launch it, so the
+		// influence-overlay heatmap can be screenshotted unattended. Mirrors the non-GUI
+		// parts of SkirmishGameOptionsMenuInit + reallyDoStart. Degrades gracefully (no
+		// crash) if no valid multiplayer map is available.
+		if ((TheGlobalData->m_stratagemShot || TheGlobalData->m_navalShot || TheGlobalData->m_navalSandbox) && TheMapCache)
+		{
+			AsciiString mapName = TheGlobalData->m_stratagemShotMap;
+			if (TheGlobalData->m_navalSandbox)   mapName = TheGlobalData->m_navalSandboxMap;
+			else if (TheGlobalData->m_navalShot) mapName = TheGlobalData->m_navalShotMap;
+			const MapMetaData *md = mapName.isEmpty() ? nullptr : TheMapCache->findMap(mapName);
+			if (md == nullptr)
+			{
+				// pick the first multiplayer map with room for 2 players
+				for (MapCache::const_iterator it = TheMapCache->begin(); it != TheMapCache->end(); ++it)
+				{
+					if (it->second.m_isMultiplayer && it->second.m_numPlayers >= 2)
+					{
+						mapName = it->first;
+						md = &it->second;
+						break;
+					}
+				}
+			}
+
+			if (md != nullptr)
+			{
+				if (TheSkirmishGameInfo == nullptr)
+					TheSkirmishGameInfo = NEW SkirmishGameInfo;
+				TheSkirmishGameInfo->init();
+				TheSkirmishGameInfo->clearSlotList();
+				TheSkirmishGameInfo->reset();
+				TheSkirmishGameInfo->setLocalIP( TheSkirmishGameInfo->getSlot(0)->getIP() );
+				TheSkirmishGameInfo->enterGame();
+
+				// Slot 0 is the local slot - the engine requires a valid local HUMAN player,
+				// so keep it human but make it a non-participating OBSERVER. That frees slots
+				// 1 and 2 to be a clean 1v1 AI-vs-AI: slot 1 gets the -stratagemAI persona
+				// (first skirmish AI), slot 2 stays stock = the baseline opponent.
+				// STRATAGEM training harness: optional faction pin (-stratagemFaction China) so both
+				// AIs play the same faction for a controlled matchup; else RANDOM (default).
+				Int stratFactionTmpl = PLAYERTEMPLATE_RANDOM;
+				if (StratagemAIGetFaction()[0] != 0 && ThePlayerTemplateStore != nullptr)
+				{
+					AsciiString fn; fn.format( "Faction%s", StratagemAIGetFaction() );
+					Int idx = ThePlayerTemplateStore->getTemplateNumByName( fn );
+					if (idx >= 0) stratFactionTmpl = idx;
+				}
+
+				GameSlot slot0;
+				slot0.setState( SLOT_PLAYER, UnicodeString(L"Observer") );
+				slot0.setPlayerTemplate( PLAYERTEMPLATE_OBSERVER );
+				slot0.setColor( 0 );
+				slot0.setStartPos( -1 );
+				TheSkirmishGameInfo->setSlot( 0, slot0 );
+
+				GameSlot slot1;
+				slot1.setState( SLOT_BRUTAL_AI, UnicodeString(L"Stratagem") );
+				slot1.setPlayerTemplate( stratFactionTmpl );
+				slot1.setColor( 1 );
+				slot1.setStartPos( 0 );
+				slot1.setStrategistId( StratagemAIGetSlotStrategist() );   // -stratagemSlotAI test hook (per-slot path)
+				TheSkirmishGameInfo->setSlot( 1, slot1 );
+
+				GameSlot slot2;
+				slot2.setState( SLOT_BRUTAL_AI, UnicodeString(L"Baseline") );
+				slot2.setPlayerTemplate( stratFactionTmpl );
+				slot2.setColor( 2 );
+				slot2.setStartPos( 1 );
+				// -stratagemOpponentAI: give slot 2 a chosen general (the sparring opponent for training).
+				if (StratagemAIGetOpponent()[0] != 0)
+				{
+					Int oppIdx = StratagemRosterIndexByName( AsciiString( StratagemAIGetOpponent() ) );
+					if (oppIdx >= 0) slot2.setStrategistId( oppIdx );
+				}
+				TheSkirmishGameInfo->setSlot( 2, slot2 );
+
+				// The persona goes to the first skirmish AI created (slot 1); reset the claim
+				// so this match assigns it fresh (and slot 2 stays baseline).
+				StratagemAIResetAssignment();
+
+				// Fixed seed (configurable via -stratagemSeed) so the whole match - RANDOM
+				// faction resolution, start positions, AI decisions - replays identically.
+				// Varying the seed gives independent samples for parallel fleets.
+				TheSkirmishGameInfo->setSeed( StratagemAIGetSeed() );
+				TheSkirmishGameInfo->setMap( mapName );
+				TheSkirmishGameInfo->setMapCRC( md->m_CRC );
+				TheSkirmishGameInfo->setMapSize( md->m_filesize );
+
+				TheWritableGlobalData->m_shellMapOn = FALSE;
+				TheWritableGlobalData->m_playIntro = FALSE;
+				TheWritableGlobalData->m_mapName = TheSkirmishGameInfo->getMap();
+				TheSkirmishGameInfo->startGame( 0 );
+				InitRandom( TheSkirmishGameInfo->getSeed() );
+
+				GameMessage *msg = TheMessageStream->appendMessage( GameMessage::MSG_NEW_GAME );
+				msg->appendIntegerArgument( GAME_SKIRMISH );
+				msg->appendIntegerArgument( DIFFICULTY_NORMAL );
+				msg->appendIntegerArgument( 0 );
+				msg->appendIntegerArgument( 30 );   // FPS limit
+
+				DEBUG_LOG(("STRATAGEM auto-capture: starting AI skirmish on '%s'", mapName.str()));
+			}
+			else
+			{
+				DEBUG_LOG(("STRATAGEM auto-capture: no valid multiplayer map in cache; not starting a game."));
 			}
 		}
 
@@ -980,6 +1124,328 @@ void GameEngine::execute()
 				}
 			}
 #endif
+
+			// Project STRATAGEM auto-capture: once a real match is running, force the
+			// influence overlay on. The actual screenshot capture + auto-exit happen in
+			// W3DDisplay::draw() right after WW3D::End_Render(), because the debug-icon
+			// overlay is flushed via the static sort list during the scene render and is
+			// NOT yet in the back buffer when the game loop reads it here.
+			if (TheGlobalData->m_stratagemShot && TheGameLogic && TheGameLogic->isInGame()
+					&& !TheGameLogic->isInShellGame() && !TheGameLogic->isLoadingMap())
+			{
+				TheWritableGlobalData->m_debugAI = AI_DEBUG_STRATAGEM_INFLUENCE;
+			}
+
+			// NAVAL Tier-1 verification (-navalShot): once the match is live, spawn a
+			// ChinaGunboat on a water cell, order it across the lake, and DEBUG_LOG whether
+			// it actually traverses water - then quit. All result lines are prefixed
+			// "NAVALSHOT" so scripts/naval_shot.ps1 can grep the verdict. Fully unattended.
+			if (TheGlobalData->m_navalShot && TheGameLogic && TheGameLogic->isInGame()
+					&& !TheGameLogic->isInShellGame() && !TheGameLogic->isLoadingMap())
+			{
+				enum NavalPhase { NAVAL_SETTLE, NAVAL_MOVING, NAVAL_FINISHED };
+				static NavalPhase navalPhase = NAVAL_SETTLE;
+				static UnsignedInt navalPhaseStart = 0;
+				static UnsignedInt navalLastLog = 0;
+				static ObjectID navalUnit = INVALID_ID;
+				static Coord3D navalSpawn, navalDest;
+				// Set once the boat is demonstrably out on open water, well away from the
+				// shore it launched from - this is the real proof of water traversal, and
+				// avoids an edge-effect false negative when the destination water cell sits
+				// right at the lake's rim (the boat resting there can read underwater=0).
+				static Bool navalSawWaterTransit = FALSE;
+
+				const UnsignedInt frame = TheGameLogic->getFrame();
+				if (navalPhaseStart == 0)
+					navalPhaseStart = frame;
+
+				if (navalPhase == NAVAL_SETTLE)
+				{
+					// give the match ~1s to finish loading objects/players before we poke it
+					if (frame > navalPhaseStart + 30)
+					{
+						// Scan the playable extent for water cells: nearest = spawn, farthest = dest.
+						Region3D ext;
+						TheTerrainLogic->getExtent(&ext);
+						const Real step = 40.0f;
+						Bool found = FALSE;
+						Real bestDistSq = -1.0f;
+						for (Real y = ext.lo.y; y <= ext.hi.y; y += step)
+						{
+							for (Real x = ext.lo.x; x <= ext.hi.x; x += step)
+							{
+								Real waterZ = 0.0f, terrainZ = 0.0f;
+								if (TheTerrainLogic->isUnderwater(x, y, &waterZ, &terrainZ))
+								{
+									if (!found)
+									{
+										navalSpawn.x = x; navalSpawn.y = y; navalSpawn.z = waterZ;
+										navalDest = navalSpawn;
+										found = TRUE;
+										bestDistSq = 0.0f;
+									}
+									else
+									{
+										Real dx = x - navalSpawn.x, dy = y - navalSpawn.y;
+										Real d2 = dx*dx + dy*dy;
+										if (d2 > bestDistSq)
+										{
+											bestDistSq = d2;
+											navalDest.x = x; navalDest.y = y; navalDest.z = waterZ;
+										}
+									}
+								}
+							}
+						}
+
+						if (!found)
+						{
+							DEBUG_LOG(("NAVALSHOT RESULT: FAIL - no water cells found on map '%s'", TheGlobalData->m_mapName.str()));
+							navalPhase = NAVAL_FINISHED;
+							TheGameEngine->setQuitting(TRUE);
+						}
+						else
+						{
+							const ThingTemplate *tmpl = TheThingFactory->findTemplate("ChinaGunboat");
+							if (tmpl == nullptr)
+							{
+								DEBUG_LOG(("NAVALSHOT RESULT: FAIL - ChinaGunboat template not found (map.ini override not loaded?)"));
+								navalPhase = NAVAL_FINISHED;
+								TheGameEngine->setQuitting(TRUE);
+							}
+							else
+							{
+								Player *p = ThePlayerList->getLocalPlayer();
+								Object *boat = TheThingFactory->newObject(tmpl, p->getDefaultTeam());
+								boat->setPosition(&navalSpawn);
+								navalUnit = boat->getID();
+
+								Real wz = 0.0f, tz = 0.0f;
+								Bool uw = TheTerrainLogic->isUnderwater(navalSpawn.x, navalSpawn.y, &wz, &tz);
+								Real span = (Real)sqrt((double)bestDistSq);
+								DEBUG_LOG(("NAVALSHOT: spawned ChinaGunboat id=%d at (%.0f,%.0f) underwater=%d layer=%d; dest=(%.0f,%.0f) waterSpan=%.0f",
+									(Int)navalUnit, navalSpawn.x, navalSpawn.y, uw ? 1 : 0, (Int)boat->getLayer(),
+									navalDest.x, navalDest.y, span));
+								(void)uw; (void)span;	// only referenced by DEBUG_LOG, which compiles out in non-logging builds
+
+								AIUpdateInterface *ai = boat->getAIUpdateInterface();
+								if (ai)
+									ai->aiMoveToPosition(&navalDest, CMD_FROM_AI);
+								else
+									DEBUG_LOG(("NAVALSHOT: WARNING - gunboat has no AIUpdateInterface; cannot issue move"));
+
+								navalPhase = NAVAL_MOVING;
+								navalPhaseStart = frame;
+								navalLastLog = frame;
+							}
+						}
+					}
+				}
+				else if (navalPhase == NAVAL_MOVING)
+				{
+					Object *boat = TheGameLogic->findObjectByID(navalUnit);
+					if (boat == nullptr)
+					{
+						DEBUG_LOG(("NAVALSHOT RESULT: FAIL - gunboat destroyed/removed at frame %d", frame));
+						navalPhase = NAVAL_FINISHED;
+						TheGameEngine->setQuitting(TRUE);
+					}
+					else
+					{
+						const Coord3D *pos = boat->getPosition();
+						Real wz = 0.0f, tz = 0.0f;
+						Bool uw = TheTerrainLogic->isUnderwater(pos->x, pos->y, &wz, &tz);
+						Real ddx = pos->x - navalDest.x, ddy = pos->y - navalDest.y;
+						Real distToDest = (Real)sqrt((double)(ddx*ddx + ddy*ddy));
+						Real mdx = pos->x - navalSpawn.x, mdy = pos->y - navalSpawn.y;
+						Real moved = (Real)sqrt((double)(mdx*mdx + mdy*mdy));
+
+						// Mark the moment the boat is genuinely under way on water (on a water
+						// cell, well clear of its launch point). One such sample is conclusive.
+						if (uw && moved > 120.0f)
+							navalSawWaterTransit = TRUE;
+
+						// progress trace every ~1s
+						if (frame - navalLastLog >= 30)
+						{
+							DEBUG_LOG(("NAVALSHOT: frame=%d pos=(%.0f,%.0f) underwater=%d layer=%d distToDest=%.0f",
+								frame, pos->x, pos->y, uw ? 1 : 0, (Int)boat->getLayer(), distToDest));
+							navalLastLog = frame;
+						}
+
+						// verdict after ~20s of travel: it traversed open water (sawWaterTransit)
+						// AND arrived at the far water destination it was ordered to.
+						if (frame > navalPhaseStart + 600)
+						{
+							Bool reachedWaterDest = (distToDest < 120.0f) && (moved > 80.0f);
+							Bool pass = navalSawWaterTransit && reachedWaterDest;
+							DEBUG_LOG(("NAVALSHOT RESULT: %s - finalPos=(%.0f,%.0f) sawWaterTransit=%d reachedWaterDest=%d distToDest=%.0f movedFromSpawn=%.0f",
+								pass ? "PASS" : "FAIL", pos->x, pos->y, navalSawWaterTransit ? 1 : 0, reachedWaterDest ? 1 : 0, distToDest, moved));
+							(void)pass;	// only referenced by DEBUG_LOG, which compiles out in non-logging builds
+							navalPhase = NAVAL_FINISHED;
+							TheGameEngine->setQuitting(TRUE);
+						}
+					}
+				}
+			}
+
+			// NAVAL demo (-navalSandbox): give every active side a War Factory that keeps
+			// PRODUCING ChinaGunboats, ally all sides (so there's no combat), and patrol the
+			// gunboats around the lake. Runs until the process is killed - meant to be watched
+			// / screen-captured in a windowed instance.
+			if (TheGlobalData->m_navalSandbox && TheGameLogic && TheGameLogic->isInGame()
+					&& !TheGameLogic->isInShellGame() && !TheGameLogic->isLoadingMap())
+			{
+				enum SbPhase { SB_SETTLE, SB_RUN };
+				static SbPhase     sbPhase = SB_SETTLE;
+				static UnsignedInt sbStart = 0, sbLastProd = 0, sbLastPatrol = 0;
+				static Coord3D     sbWater[2048];
+				static Int         sbWaterCount = 0;
+				static ObjectID    sbFactory[8];
+				static Coord3D     sbCenter;     // centre of the water - where we aim the camera
+
+				const UnsignedInt frame = TheGameLogic->getFrame();
+				if (sbStart == 0) sbStart = frame;
+
+				if (sbPhase == SB_SETTLE)
+				{
+					// let the skirmish place each side's starting base first (~3s)
+					if (frame > sbStart + 90)
+					{
+						// Never end this demo: once we ally all sides below, the "defeat all
+						// enemies" check would be satisfied and pop the scoreboard immediately.
+						if (TheVictoryConditions) TheVictoryConditions->setVictoryConditions(0);
+
+						Region3D ext;
+						TheTerrainLogic->getExtent(&ext);
+						for (Real y = ext.lo.y; y <= ext.hi.y && sbWaterCount < 2048; y += 60.0f)
+							for (Real x = ext.lo.x; x <= ext.hi.x && sbWaterCount < 2048; x += 60.0f)
+							{
+								Real wz = 0.0f, tz = 0.0f;
+								if (TheTerrainLogic->isUnderwater(x, y, &wz, &tz))
+								{
+									sbWater[sbWaterCount].x = x; sbWater[sbWaterCount].y = y; sbWater[sbWaterCount].z = wz;
+									++sbWaterCount;
+								}
+							}
+
+						// camera target = average of the water cells (the lake centre)
+						sbCenter.x = sbCenter.y = sbCenter.z = 0.0f;
+						if (sbWaterCount > 0)
+						{
+							for (Int wi = 0; wi < sbWaterCount; ++wi)
+							{ sbCenter.x += sbWater[wi].x; sbCenter.y += sbWater[wi].y; sbCenter.z += sbWater[wi].z; }
+							sbCenter.x /= sbWaterCount; sbCenter.y /= sbWaterCount; sbCenter.z /= sbWaterCount;
+						}
+
+						for (Int i = 0; i < 8; ++i) sbFactory[i] = INVALID_ID;
+						const ThingTemplate *wfT = TheThingFactory->findTemplate("ChinaWarFactory");
+						const ThingTemplate *ppT = TheThingFactory->findTemplate("ChinaPowerPlant");
+						Player *neutral = ThePlayerList->getNeutralPlayer();
+						Int count = ThePlayerList->getPlayerCount();
+
+						for (Int pi = 0; pi < count && pi < 8; ++pi)
+						{
+							Player *p = ThePlayerList->getNthPlayer(pi);
+							if (!p || p == neutral || !p->isPlayerActive()) continue;
+
+							// base location = first object this side controls (prefer a structure)
+							Coord3D basePos; Bool found = FALSE;
+							for (Object *o = TheGameLogic->getFirstObject(); o; o = o->getNextObject())
+							{
+								if (o->getControllingPlayer() == p)
+								{
+									basePos = *o->getPosition(); found = TRUE;
+									if (o->isKindOf(KINDOF_STRUCTURE)) break;
+								}
+							}
+							if (!found) continue;
+
+							p->getMoney()->deposit(1000000, FALSE, FALSE);
+							if (ppT)
+								for (Int k = 0; k < 2; ++k)
+								{
+									Object *pw = TheThingFactory->newObject(ppT, p->getDefaultTeam());
+									Coord3D pwp = basePos; pwp.x += 60.0f; pwp.y += (k ? 90.0f : -90.0f);
+									pw->setPosition(&pwp);
+								}
+							if (wfT)
+							{
+								Object *f = TheThingFactory->newObject(wfT, p->getDefaultTeam());
+								Coord3D fp = basePos; fp.x += 140.0f;
+								f->setPosition(&fp);
+								sbFactory[pi] = f->getID();
+							}
+						}
+
+						// Make every side NEUTRAL to every other (not ALLIES): neutral units don't
+						// auto-acquire/shoot each other (so there's no combat), AND neutral sides
+						// stay separate "alliances" - allying everyone into one alliance would trip
+						// the "single alliance remaining" check and end the match immediately.
+						for (Int a = 0; a < count; ++a)
+						{
+							Player *pa = ThePlayerList->getNthPlayer(a);
+							if (!pa || pa == neutral || !pa->isPlayerActive()) continue;
+							for (Int b = 0; b < count; ++b)
+							{
+								if (a == b) continue;
+								Player *pb = ThePlayerList->getNthPlayer(b);
+								if (!pb || pb == neutral || !pb->isPlayerActive()) continue;
+								pa->setPlayerRelationship(pb, NEUTRAL);
+							}
+						}
+
+						DEBUG_LOG(("NAVALSANDBOX: setup complete - %d water cells", sbWaterCount));
+						if (TheTacticalView) TheTacticalView->lookAt(&sbCenter);
+						sbPhase = SB_RUN; sbLastProd = frame; sbLastPatrol = frame;
+					}
+				}
+				else // SB_RUN
+				{
+					// keep the camera looking at the lake (re-aim every ~10s)
+					if (TheTacticalView && (frame % 300) == 0) TheTacticalView->lookAt(&sbCenter);
+
+					const ThingTemplate *gbT = TheThingFactory->findTemplate("ChinaGunboat");
+
+					// keep each War Factory producing gunboats (cap ~12 alive per side)
+					if (gbT && frame - sbLastProd >= 150)
+					{
+						for (Int pi = 0; pi < 8; ++pi)
+						{
+							if (sbFactory[pi] == INVALID_ID) continue;
+							Object *f = TheGameLogic->findObjectByID(sbFactory[pi]);
+							if (!f) continue;
+							Player *owner = f->getControllingPlayer();
+							Int mine = 0;
+							for (Object *o = TheGameLogic->getFirstObject(); o; o = o->getNextObject())
+								if (o->getControllingPlayer() == owner && o->getTemplate() == gbT) ++mine;
+							if (mine >= 12) continue;
+							ProductionUpdateInterface *pu = f->getProductionUpdateInterface();
+							if (pu) pu->queueCreateUnit(gbT, pu->requestUniqueUnitID());
+						}
+						sbLastProd = frame;
+					}
+
+					// patrol: re-task every gunboat to a fresh water cell every ~6s
+					if (gbT && sbWaterCount > 0 && frame - sbLastPatrol >= 180)
+					{
+						for (Object *o = TheGameLogic->getFirstObject(); o; o = o->getNextObject())
+						{
+							if (o->getTemplate() != gbT) continue;
+							AIUpdateInterface *ai = o->getAIUpdateInterface();
+							if (!ai) continue;
+							// gather the fleet around the lake centre (with a per-boat offset so
+							// they spread into a visible flotilla rather than stacking on one cell)
+							UnsignedInt id = (UnsignedInt)o->getID();
+							Coord3D t = sbCenter;
+							t.x += (Real)((id * 53 + (frame / 180) * 31) % 280) - 140.0f;
+							t.y += (Real)((id * 89 + (frame / 180) * 17) % 280) - 140.0f;
+							ai->aiMoveToPosition(&t, CMD_FROM_AI);
+						}
+						sbLastPatrol = frame;
+					}
+				}
+			}
 
 			{
 				try

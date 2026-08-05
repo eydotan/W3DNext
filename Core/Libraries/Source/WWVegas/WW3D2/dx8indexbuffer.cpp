@@ -44,6 +44,7 @@
 #include "sphere.h"
 #include "thread.h"
 #include "wwmemlog.h"
+#include "Backend/RenderBackend.h" // g_renderBackend->Stage_Dynamic_Indices (D3D11 capture)
 
 #define DEFAULT_IB_SIZE 5000
 
@@ -452,6 +453,12 @@ DynamicIBAccessClass::WriteLockClass::~WriteLockClass()
 	DX8_THREAD_ASSERT();
 	switch (DynamicIBAccess->Get_Type()) {
 	case BUFFER_TYPE_DYNAMIC_DX8:
+		// D3D11 backend capture (RENDERER_PORT.md step 10): hand the just-written
+		// indices to the backend while the CPU mapping is still valid (the DX8
+		// dynamic IB discard-locks). No-op on the DX8 reference backend.
+		if (g_renderBackend != nullptr && Indices != nullptr) {
+			g_renderBackend->Stage_Dynamic_Indices(Indices, DynamicIBAccess->Get_Index_Count());
+		}
 		DX8_Assert();
 		DX8_ErrorCode(static_cast<DX8IndexBufferClass*>(DynamicIBAccess->IndexBuffer)->Get_DX8_Index_Buffer()->Unlock());
 		break;

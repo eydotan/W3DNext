@@ -83,6 +83,7 @@ enum
 #include "W3DDevice/GameClient/W3DProjectedShadow.h"
 #include "WW3D2/camera.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/dx8renderer.h"
 #include "WW3D2/matinfo.h"
 #include "WW3D2/mesh.h"
@@ -116,6 +117,9 @@ W3DTreeBuffer::W3DTreeTextureClass::W3DTreeTextureClass(unsigned width, unsigned
 	TextureClass(width, height,
 		WW3D_FORMAT_A8R8G8B8, MIP_LEVELS_ALL )
 {
+	// Composed once by update() right after construction, then only ever
+	// replaced wholesale (see Is_Procedural_Cacheable in texture.h).
+	Set_Procedural_Cacheable(true);
 }
 
 //=============================================================================
@@ -1635,8 +1639,8 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 //#define DEBUG_TEXTURE 1
 #ifdef DEBUG_TEXTURE // Draw the combined texture for debugging. jba. [4/21/2003]
 	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Shader(detailAlphaShader);
-	DX8Wrapper::Set_Texture(0,m_treeTexture);
+	g_renderBackend->Set_Shader(detailAlphaShader);
+	g_renderBackend->Set_Texture(0,m_treeTexture);
 	DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8, 6);
 	//draw an infinite sky plane
 	DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8, DX8_FVF_XYZNDUV2, 4);
@@ -1688,29 +1692,46 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 		}
 	}
 
-	DX8Wrapper::Set_Index_Buffer(ib_access,0);
-	DX8Wrapper::Set_Vertex_Buffer(vb_access);
+	g_renderBackend->Set_Index_Buffer(ib_access,0);
+	g_renderBackend->Set_Vertex_Buffer(vb_access);
 
 	Matrix3D tm(1);
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,tm);
 
-	DX8Wrapper::Draw_Triangles(	0,2, 0,	4);	//draw a quad, 2 triangles, 4 verts
+	g_renderBackend->Draw_Triangles(	0,2, 0,	4);	//draw a quad, 2 triangles, 4 verts
 #endif
 
 
 	if (m_curNumTreeIndices[0] == 0) {
 		return;
 	}
-	DX8Wrapper::Set_Shader(detailAlphaShader);
+	g_renderBackend->Set_Shader(detailAlphaShader);
 
-	DX8Wrapper::Set_Texture(0,m_treeTexture);
-	DX8Wrapper::Set_Texture(1,nullptr);
+	g_renderBackend->Set_Texture(0,m_treeTexture);
+	g_renderBackend->Set_Texture(1,nullptr);
 	DX8Wrapper::Set_DX8_Texture_Stage_State(0,  D3DTSS_TEXCOORDINDEX, 0);
 	DX8Wrapper::Set_DX8_Texture_Stage_State(1,  D3DTSS_TEXCOORDINDEX, 1);
 	// Draw all the trees.
-	DX8Wrapper::Apply_Render_State_Changes();
+	g_renderBackend->Apply_Render_State_Changes();
 	W3DShaderManager::setShroudTex(1);
-	DX8Wrapper::Apply_Render_State_Changes();
+	g_renderBackend->Apply_Render_State_Changes();
+
+	// W3DNext: the sway constants below program only the raw D3D8 device
+	// (Trees.vso c8..c18) - the D3D11 backend stubs them and rendered every
+	// tree FROZEN (motion oracle, parity log 2026-07-28). Mirror the same wave
+	// table into the FF vertex shader; entry 0 = the no-sway zero vector,
+	// entries 1..MAX = swayFactor[type-1], exactly the DX8 indexing
+	// (vertex normal.x = swayType, 0 for none). Self-gated, DX8 untouched.
+	{
+		float zpSway[(MAX_SWAY_TYPES + 1) * 4] = { 0 };
+		Int zpi;
+		for (zpi = 0; zpi < MAX_SWAY_TYPES; zpi++) {
+			zpSway[(zpi + 1) * 4 + 0] = swayFactor[zpi].X;
+			zpSway[(zpi + 1) * 4 + 1] = swayFactor[zpi].Y;
+			zpSway[(zpi + 1) * 4 + 2] = swayFactor[zpi].Z;
+		}
+		RB_Mirror_Tree_Sway(true, zpSway, MAX_SWAY_TYPES + 1);
+	}
 
 	if (m_dwTreeVertexShader) {
 		D3DXMATRIX matProj, matView, matWorld;
@@ -1756,9 +1777,9 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 			DX8Wrapper::_Get_D3D_Device8()->SetVertexShaderConstant(  33, &offset,  1 );
 		}
 
-		DX8Wrapper::Set_Vertex_Shader(m_dwTreeVertexShader);
+		g_renderBackend->Set_Vertex_Shader(m_dwTreeVertexShader);
 #if 0
-		DX8Wrapper::Set_Pixel_Shader(m_dwTreePixelShader);
+		g_renderBackend->Set_Pixel_Shader(m_dwTreePixelShader);
 		// a.c. 6/16 - allow switching between normal and 2X mode for terrain
 		Real mulTwoX = 0.5f;
 		if(TheGlobalData && TheGlobalData->m_useOverbright)
@@ -1767,7 +1788,7 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 #endif
 
 	} else {
-		DX8Wrapper::Set_Vertex_Shader(DX8_FVF_XYZNDUV1);
+		g_renderBackend->Set_Vertex_Shader(DX8_FVF_XYZNDUV1);
 	}
 
 
@@ -1776,22 +1797,26 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 		if (m_curNumTreeIndices[bNdx]==0) {
 			break;
 		}
-		DX8Wrapper::Set_Index_Buffer(m_indexTree[bNdx],0);
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexTree[bNdx]);
+		g_renderBackend->Set_Index_Buffer(m_indexTree[bNdx],0);
+		g_renderBackend->Set_Vertex_Buffer(m_vertexTree[bNdx]);
 		// Render the waving grass
-		DX8Wrapper::Apply_Render_State_Changes();
+		g_renderBackend->Apply_Render_State_Changes();
 		if (m_dwTreeVertexShader) {
 			DX8Wrapper::_Get_D3D_Device8()->SetVertexShader(m_dwTreeVertexShader);
 			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(0,  D3DTSS_TEXCOORDINDEX, 0);
 			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(1,  D3DTSS_TEXCOORDINDEX, 1);
 			DX8Wrapper::_Get_D3D_Device8()->SetTextureStageState(1,  D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
 		}
-		DX8Wrapper::Draw_Triangles(	0, m_curNumTreeIndices[bNdx]/3, 0,	m_curNumTreeVertices[bNdx]);
+		g_renderBackend->Draw_Triangles(	0, m_curNumTreeIndices[bNdx]/3, 0,	m_curNumTreeVertices[bNdx]);
 	}
 
-	DX8Wrapper::Set_Vertex_Shader(DX8_FVF_XYZNDUV1);
-	DX8Wrapper::Set_Pixel_Shader(0);
-	DX8Wrapper::Invalidate_Cached_Render_States();	//code above mucks around with W3D states so make sure we reset
+	// W3DNext: park the sway skew - after this draw the vertex normal is a
+	// real normal again.
+	RB_Mirror_Tree_Sway(false, nullptr, 0);
+
+	g_renderBackend->Set_Vertex_Shader(DX8_FVF_XYZNDUV1);
+	g_renderBackend->Set_Pixel_Shader(0);
+	g_renderBackend->Invalidate_Cached_Render_States();	//code above mucks around with W3D states so make sure we reset
 
 }
 

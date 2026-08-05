@@ -138,6 +138,61 @@ extern bool _DX8SingleThreaded;
 void DX8_Assert();
 void Log_DX8_ErrorCode(unsigned res);
 
+// W3DNext renderer port: D3D11 texgen mirror hooks, defined in
+// Backend/D3D11Backend_W3D.cpp. Self-gated no-ops while the DX8 backend is
+// drawing (a single Is_D3D11_Backend_Active() check). They exist because the
+// two fixed-function texgen inputs - D3DTSS_TEXCOORDINDEX /
+// D3DTSS_TEXTURETRANSFORMFLAGS and the D3DTS_TEXTUREn matrices - are set
+// through DX8Wrapper's inline funnels below by the terrain shroud/cloud
+// shaders, and the D3D11 backend has no fixed-function pipeline to consume
+// them; the hooks forward the state into its texgen constant buffer.
+void RB_Mirror_Texgen_Stage_State(unsigned stage, unsigned state, unsigned value);
+void RB_Mirror_Texture_Transform(unsigned stage, const D3DMATRIX & m);
+// Grayscale bracket for Render2DClass's disabled-button draw: DX8 implements it
+// with raw DOT3 texture-stage overrides the D3D11 backend never sees; this hook
+// routes the same request into the backend's monochrome combiner post-op.
+// Self-gated no-op while the DX8 backend is drawing. Callers bracket the draw
+// (enable before, disable after) because the override is sticky.
+void RB_Mirror_Grayscale2D(bool enable);
+// Terrain 2-stage FF pass mirror for TerrainShader2Stage (W3DShaderManager):
+// that shader programs its per-pass combiner ops and framebuffer blend through
+// raw device pokes the D3D11 backend never sees, so the terrain BLEND pass
+// (pass 1) drew with the stale opaque Set_Shader vector - blend OFF - and the
+// A1R5G5B5 blend tiles rendered hard/opaque where DX8 feathers them (the
+// parity log's dark rectangular cells). Forwards the pass's combiner + blend
+// vector into the backend's typed state. `noise_stages` only matters for
+// pass 2 (1 = single cloud/noise texture, 2 = cloud+noise combined).
+// Self-gated no-op while the DX8 backend is drawing.
+void RB_Mirror_Terrain_FF_Pass(int pass, int noise_stages);
+// Road 2-stage FF pass mirror for RoadShader2Stage (W3DShaderManager): same
+// mechanism as the terrain mirror above - the road shader's combiner ops and
+// SRCALPHA/INVSRCALPHA blend are raw device pokes, so under D3D11 roads drew
+// with whatever vector the previous draw left bound (blend off -> the road
+// strip's alpha-feathered edges/end caps rendered opaque-pale, junction
+// overlaps rendered as hard notches). `noise_stage_active` mirrors the cloud/
+// lightmap second stage. Self-gated no-op while the DX8 backend is drawing.
+void RB_Mirror_Road_FF_Pass(int noise_stage_active);
+// Tree-sway mirror for W3DTreeBuffer: the DX8 path uploads its per-type wave
+// vectors as raw vertex-shader constants (c8..c18) for Trees.vso, which the
+// D3D11 backend stubs - trees rendered FROZEN (motion oracle, 2026-07-28).
+// Forwards the same table into the FF vertex shader's sway skew. Entry 0 must
+// be the zero no-sway vector. Self-gated no-op while DX8 is drawing.
+void RB_Mirror_Tree_Sway(bool enable, const float * vec4s, unsigned int count);
+// WORLD/VIEW twin of the texture-matrix mirror below: the sorting renderer's
+// flush (and W3DWater) re-apply transforms through _Set_DX8_Transform, which
+// only talks to the raw D3D8 device; this forwards the same set into the D3D11
+// backend so sorted-translucent draws stop rasterizing with stale transforms.
+// Self-gated no-op while the DX8 backend is drawing.
+void RB_Mirror_World_View_Transform(unsigned transform, const D3DMATRIX & m);
+// Read-back companion: on the D3D11 backend the raw D3D8 device no longer
+// receives WORLD/VIEW transform updates (the backend owns them), so a device
+// GetTransform returns stale or uninitialized data - the shroud/cloud shaders
+// were building their texgen matrices from garbage. When the D3D11 backend is
+// active and the transform is WORLD/VIEW/PROJECTION this fills `m` from the
+// backend's live matrix (transposed into the device's row-vector layout) and
+// returns true; otherwise false and the caller reads the device as before.
+bool RB_Get_Backend_Transform(D3DTRANSFORMSTATETYPE transform, D3DMATRIX & m);
+
 WWINLINE void DX8_ErrorCode(unsigned res)
 {
 	if (res==D3D_OK) return;
@@ -759,6 +814,17 @@ WWINLINE void DX8Wrapper::_Set_DX8_Transform(D3DTRANSFORMSTATETYPE transform, co
 #endif
 	{
 		DX8Transforms[transform]=m;
+		if (transform >= D3DTS_TEXTURE0 && transform <= D3DTS_TEXTURE7) {
+			// W3DNext renderer port: forward texture matrices to the D3D11
+			// texgen slice (no-op on the DX8 backend).
+			RB_Mirror_Texture_Transform(static_cast<unsigned>(transform - D3DTS_TEXTURE0), m);
+		}
+		else if (transform == D3DTS_WORLD || transform == D3DTS_VIEW) {
+			// W3DNext renderer port: forward WORLD/VIEW to the D3D11 backend
+			// (no-op on the DX8 backend) - the sorting flush and W3DWater set
+			// them through this device funnel.
+			RB_Mirror_World_View_Transform(static_cast<unsigned>(transform), m);
+		}
 		SNAPSHOT_SAY(("DX8 - SetTransform %d [%f,%f,%f,%f][%f,%f,%f,%f][%f,%f,%f,%f]",
 			transform,
 			m.m[0][0],m.m[0][1],m.m[0][2],m.m[0][3],
@@ -771,6 +837,10 @@ WWINLINE void DX8Wrapper::_Set_DX8_Transform(D3DTRANSFORMSTATETYPE transform, co
 
 WWINLINE void DX8Wrapper::_Get_DX8_Transform(D3DTRANSFORMSTATETYPE transform, D3DMATRIX& m)
 {
+	// W3DNext renderer port: serve WORLD/VIEW/PROJECTION from the live D3D11
+	// backend when it is drawing (see RB_Get_Backend_Transform); the raw-device
+	// read below is the unchanged DX8 default path.
+	if (RB_Get_Backend_Transform(transform, m)) return;
 	DX8CALL(GetTransform(transform,&m));
 }
 
@@ -896,6 +966,11 @@ WWINLINE void DX8Wrapper::Set_DX8_Texture_Stage_State(unsigned stage, D3DTEXTURE
 #endif
 
 	TextureStageStates[stage][(unsigned int)state]=value;
+	if (state == D3DTSS_TEXCOORDINDEX || state == D3DTSS_TEXTURETRANSFORMFLAGS) {
+		// W3DNext renderer port: forward the texgen-relevant stage states to
+		// the D3D11 texgen slice (no-op on the DX8 backend).
+		RB_Mirror_Texgen_Stage_State(stage, (unsigned)state, value);
+	}
 	DX8CALL(SetTextureStageState( stage, state, value ));
 	DX8_RECORD_TEXTURE_STAGE_STATE_CHANGE();
 }
@@ -918,6 +993,26 @@ WWINLINE void DX8Wrapper::Set_DX8_Texture(unsigned int stage, IDirect3DBaseTextu
 	DX8_RECORD_TEXTURE_CHANGE();
 }
 
+// W3DNext renderer port: mirrors every engine-side CopyRects into the D3D11
+// backend's CPU copy-shadow, so GPU-composed destination textures whose bytes
+// can't be read at bind time (the fog-of-war shroud dst) still have real
+// content for the D3D11 SRV upload. Defined in Backend/D3D11Backend_W3D.cpp;
+// immediate no-op unless the D3D11 backend is active, so the default DX8 path
+// keeps its exact behavior.
+void D3D11_Mirror_Copy_Rects(
+	IDirect3DSurface8* pSourceSurface,
+	CONST RECT* pSourceRectsArray,
+	UINT cRects,
+	IDirect3DSurface8* pDestinationSurface,
+	CONST POINT* pDestPointsArray);
+
+// W3DNext renderer port: drops a dying texture's uploaded D3D11 copy from the
+// backend's texture cache (called from ~TextureBaseClass). Memory hygiene ONLY -
+// cache keys are TextureBaseClass ids, which are never reused, so a missed
+// eviction can only leak, never alias a later texture onto stale pixels. Defined
+// in Backend/D3D11Backend_W3D.cpp; no-op unless the D3D11 backend is active.
+void D3D11_Evict_Cached_Texture(unsigned texture_id);
+
 WWINLINE void DX8Wrapper::_Copy_DX8_Rects(
   IDirect3DSurface8* pSourceSurface,
   CONST RECT* pSourceRectsArray,
@@ -932,6 +1027,9 @@ WWINLINE void DX8Wrapper::_Copy_DX8_Rects(
   cRects,
   pDestinationSurface,
   pDestPointsArray));
+
+	D3D11_Mirror_Copy_Rects(pSourceSurface, pSourceRectsArray, cRects,
+		pDestinationSurface, pDestPointsArray);
 }
 
 WWINLINE Vector4 DX8Wrapper::Convert_Color(unsigned color)

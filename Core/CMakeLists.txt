@@ -47,3 +47,6 @@ add_subdirectory(GameEngine)
 add_subdirectory(GameEngineDevice)
 
 add_subdirectory(Tools)
+
+# Standalone test executables (development oracles)
+add_subdirectory(Tests)

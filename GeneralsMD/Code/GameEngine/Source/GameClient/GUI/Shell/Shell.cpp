@@ -30,10 +30,17 @@
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#include <vector>	// W3DNext: rotating menu wallpaper list
+
 #include "Common/RandomValue.h"
 #include "GameClient/Shell.h"
 #include "GameClient/WindowLayout.h"
 #include "GameClient/GameWindowManager.h"
+#include "GameClient/Image.h"
+#include "GameClient/Display.h"
+#include "GameClient/ClientRandomValue.h"
+#include "Common/FileSystem.h"
+#include "Common/LocalFileSystem.h"
 #include "GameClient/GameWindowTransitions.h"
 #include "GameClient/IMEManager.h"
 #include "GameClient/AnimateWindowManager.h"
@@ -44,6 +51,93 @@
 
 // PUBLIC DATA ////////////////////////////////////////////////////////////////////////////////////
 Shell *TheShell = nullptr;  ///< the shell singleton definition
+
+
+// W3DNEXT: rotating menu wallpaper /////////////////////////////////////////////////////////////
+// When the animated 3D shell map is disabled (-noshellmap) the menu shows a full-screen wallpaper
+// picked at random from Art\Textures\Wallpapers\*.tga. While the menu is up, Shell::update swaps to
+// a different random wallpaper every ZP_WALLPAPER_ROTATE_MS. Each wallpaper gets its own Image so a
+// rotation is just a pointer swap on the background window (no texture reload).
+namespace
+{
+	const Int ZP_WALLPAPER_ROTATE_MS = 30000;  // rotate every 30 seconds
+
+	std::vector<const Image *> s_zpWallpapers;
+	Bool s_zpWallpapersInited   = FALSE;
+	Int  s_zpWallpaperIndex     = -1;     // -1 until the first one is picked
+	Int  s_zpWallpaperRotateTime = 0;     // timeGetTime() of the last (re)pick
+
+	// Build the wallpaper Image list once. Falls back to a single ZeroPowerMenu.tga
+	// when the Wallpapers folder is empty.
+	void zpInitWallpapers()
+	{
+		if (s_zpWallpapersInited)
+			return;
+		s_zpWallpapersInited = TRUE;
+		if (TheMappedImageCollection == nullptr)
+			return;
+
+		std::vector<AsciiString> textures;  // texture names relative to Art\Textures
+		if (TheLocalFileSystem != nullptr)
+		{
+			FilenameList files;
+			TheLocalFileSystem->getFileListInDirectory("Art\\Textures\\Wallpapers\\", "", "*.tga", files, FALSE);
+			for (FilenameList::const_iterator it = files.begin(); it != files.end(); ++it)
+			{
+				// getFileListInDirectory returns the full relative path; strip the
+				// directory so we can reference it under Wallpapers\.
+				const char *slash = strrchr(it->str(), '\\');
+				AsciiString bare = slash ? AsciiString(slash + 1) : *it;
+				AsciiString tex;
+				tex.format("Wallpapers\\%s", bare.str());
+				textures.push_back(tex);
+			}
+		}
+		if (textures.empty())
+			textures.push_back(AsciiString("ZeroPowerMenu.tga"));
+
+		Int idx = 0;
+		for (std::vector<AsciiString>::const_iterator it = textures.begin(); it != textures.end(); ++it, ++idx)
+		{
+			AsciiString name;
+			name.format("ZeroPowerMenu%d", idx);
+			Image *img = const_cast<Image *>(TheMappedImageCollection->findImageByName(name));
+			if (img == nullptr)
+			{
+				img = newInstance(Image);
+				img->setName(name);
+				TheMappedImageCollection->addImage(img);
+			}
+			img->setFilename(*it);
+			Region2D uv;
+			uv.lo.x = 0.0f; uv.lo.y = 0.0f; uv.hi.x = 1.0f; uv.hi.y = 1.0f;
+			img->setUV(&uv);
+			ICoord2D imageSize;
+			imageSize.x = 2048; imageSize.y = 1024;
+			img->setImageSize(&imageSize);
+			img->setTextureWidth(2048);
+			img->setTextureHeight(1024);
+			s_zpWallpapers.push_back(img);
+		}
+	}
+
+	// Cosmetic, non-sync pick from the client RNG (seeded from wall-clock time at
+	// init, so it varies across launches). Draw uniformly among the wallpapers
+	// OTHER than the current one: that never repeats back-to-back, yet every
+	// wallpaper still has equal long-run probability of appearing.
+	Int zpPickWallpaper()
+	{
+		const Int count = (Int)s_zpWallpapers.size();
+		if (count <= 1)
+			return 0;
+		// pick in [0, count-2], then skip over the current index so each of the
+		// other count-1 wallpapers is equally likely (1/(count-1)).
+		Int next = GameClientRandomValue(0, count - 2);
+		if (next >= s_zpWallpaperIndex)
+			next += 1;
+		return next;
+	}
+}
 
 
 // PUBLIC FUNCTIONS ///////////////////////////////////////////////////////////////////////////////
@@ -209,6 +303,18 @@ void Shell::update()
 		m_animateWindowManager->update();
 
 		m_schemeManager->update();
+
+		// W3DNext: rotate the menu wallpaper while it is showing (shell active,
+		// shell map off). Swap to a different random wallpaper every 30 seconds.
+		if( m_isShellActive && !m_shellMapOn && m_background && s_zpWallpapers.size() > 1
+				&& (now - s_zpWallpaperRotateTime >= ZP_WALLPAPER_ROTATE_MS) )
+		{
+			s_zpWallpaperRotateTime = now;
+			s_zpWallpaperIndex = zpPickWallpaper();
+			GameWindow *bgWin = m_background->getFirstWindow();
+			if( bgWin )
+				bgWin->winSetEnabledImage( 0, s_zpWallpapers[ s_zpWallpaperIndex ] );
+		}
 
 		// mark last time we ran the updates
 		lastUpdate = now;
@@ -558,7 +664,28 @@ void Shell::showShellMap(Bool useShellMap )
 			m_background = TheWindowManager->winCreateLayout("Menus/BlankWindow.wnd");
 
 		DEBUG_ASSERTCRASH(m_background,("We Couldn't Load Menus/BlankWindow.wnd"));
-		m_background->getFirstWindow()->winSetStatus(WIN_STATUS_IMAGE);
+		GameWindow *bgWin = m_background->getFirstWindow();
+		bgWin->winSetStatus(WIN_STATUS_IMAGE);
+
+		// W3DNext: when the animated shell map is disabled (e.g. launched with
+		// -noshellmap), show a full-screen menu wallpaper instead of a blank window.
+		// Wallpapers are the *.tga in Art\Textures\Wallpapers\ - one chosen at random
+		// now, then rotated every minute by Shell::update (see top of file). Falls
+		// back to a single Art\Textures\ZeroPowerMenu.tga when the folder is empty.
+		zpInitWallpapers();
+		if (!s_zpWallpapers.empty())
+		{
+			if (s_zpWallpaperIndex < 0)
+			{
+				s_zpWallpaperIndex = GameClientRandomValue(0, (Int)s_zpWallpapers.size() - 1);
+				s_zpWallpaperRotateTime = timeGetTime();
+			}
+			bgWin->winSetEnabledImage(0, s_zpWallpapers[s_zpWallpaperIndex]);
+			// Force the background window to cover the entire screen.
+			bgWin->winSetPosition(0, 0);
+			bgWin->winSetSize(TheDisplay->getWidth(), TheDisplay->getHeight());
+		}
+
 		m_background->hide(FALSE);
 		if (top())
 			top()->bringForward();

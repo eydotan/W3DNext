@@ -37,6 +37,7 @@
 #include "WW3D2/camera.h"
 #include "WW3D2/light.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/hlod.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
@@ -107,6 +108,54 @@ int	nShadowDecalPolysInBatch=0;
 int	nShadowDecalVertsInBatch=0;
 int SHADOW_DECAL_VERTEX_SIZE=32768;
 int SHADOW_DECAL_INDEX_SIZE=65536;
+
+// W3DNext renderer port: CPU twin of the raw D3D8 decal ring buffers. The
+// decal fill sites write through a locked-pointer idiom and the flush draws
+// with raw SetStreamSource/DrawIndexedPrimitive - all dead under D3D11 (the
+// raw draws land on the never-presented D3D8 device), which made EVERY unit/
+// tree shadow decal invisible. These shims keep the fill/flush bookkeeping
+// byte-identical: under D3D11 the "lock" hands back a pointer into a CPU
+// vector at the same ring offset, and flushDecals drains the batch through
+// the engine's dynamic vertex/index buffers instead (RenderVBTile pattern).
+// The DX8 path takes the raw branch untouched.
+#include <vector>
+static std::vector<SHADOW_DECAL_VERTEX> zpDecalCpuVerts;
+static std::vector<UnsignedShort> zpDecalCpuIndices;
+
+static bool ZP_Decal_VB_Lock(int firstVert, int numVerts, DWORD flags, SHADOW_DECAL_VERTEX ** out)
+{
+	if (Is_D3D11_Backend_Active())
+	{
+		if (zpDecalCpuVerts.size() < (size_t)SHADOW_DECAL_VERTEX_SIZE)
+			zpDecalCpuVerts.resize(SHADOW_DECAL_VERTEX_SIZE);
+		*out = &zpDecalCpuVerts[firstVert];
+		return true;
+	}
+	return shadowDecalVertexBufferD3D->Lock(firstVert*sizeof(SHADOW_DECAL_VERTEX),
+		numVerts*sizeof(SHADOW_DECAL_VERTEX), (unsigned char**)out, flags) == D3D_OK;
+}
+static void ZP_Decal_VB_Unlock()
+{
+	if (!Is_D3D11_Backend_Active())
+		shadowDecalVertexBufferD3D->Unlock();
+}
+static bool ZP_Decal_IB_Lock(int firstIndex, int numIndex, DWORD flags, UnsignedShort ** out)
+{
+	if (Is_D3D11_Backend_Active())
+	{
+		if (zpDecalCpuIndices.size() < (size_t)SHADOW_DECAL_INDEX_SIZE)
+			zpDecalCpuIndices.resize(SHADOW_DECAL_INDEX_SIZE);
+		*out = &zpDecalCpuIndices[firstIndex];
+		return true;
+	}
+	return shadowDecalIndexBufferD3D->Lock(firstIndex*sizeof(short),
+		numIndex*sizeof(short), (unsigned char**)out, flags) == D3D_OK;
+}
+static void ZP_Decal_IB_Unlock()
+{
+	if (!Is_D3D11_Backend_Active())
+		shadowDecalIndexBufferD3D->Unlock();
+}
 
 
 class W3DShadowTexture;	//forward reference
@@ -624,14 +673,14 @@ static void RenderVBTile(TextureClass *text, Real ox, Real oy, Real ou, Real ov,
 		ib[4]=0;
 	}
 
-	DX8Wrapper::Set_Index_Buffer(ib_access,0);
-	DX8Wrapper::Set_Vertex_Buffer(vb_access);
-	DX8Wrapper::Set_Texture(0, text);
+	g_renderBackend->Set_Index_Buffer(ib_access,0);
+	g_renderBackend->Set_Vertex_Buffer(vb_access);
+	g_renderBackend->Set_Texture(0, text);
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA );
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA  );
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHABLENDENABLE, TRUE );
 	ShaderClass::Invalidate();	//invalidate to force shader to reset since we directly changed states
-	DX8Wrapper::Draw_Triangles(	0,2, 0,	4);	//draw a quad, 2 triangles, 4 verts
+	g_renderBackend->Draw_Triangles(	0,2, 0,	4);	//draw a quad, 2 triangles, 4 verts
 }
 
 //Debug code used to draw some dummy polygons.
@@ -647,12 +696,12 @@ void TestBlendRender(RenderInfoClass & rinfo)
 	}
 
 	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
+	g_renderBackend->Set_Material(vmat);
 	REF_PTR_RELEASE(vmat);
-	DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
+	g_renderBackend->Set_Shader(ShaderClass::_PresetOpaqueShader);
 
 	Matrix3D tm(1);	//identity
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,tm);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,tm);
 
 	//grass
 	RenderVBTile(grass,580.0f,480.0f,0.0f,0.0f);	RenderVBTile(grass,590.0f,480.0f,0.25f,0.0f);
@@ -686,21 +735,21 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 	if (!m_pDev)	return;	//no D3D Device to render
 
 	VertexMaterialClass *vmat=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vmat);
+	g_renderBackend->Set_Material(vmat);
 	REF_PTR_RELEASE(vmat);
-	DX8Wrapper::Set_Texture(0,texture->getTexture());
+	g_renderBackend->Set_Texture(0,texture->getTexture());
 
 //	DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);	//good for debugging, draws without alpha
 	switch (type)
 	{
 		case SHADOW_DECAL:
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetMultiplicativeShader);
+			g_renderBackend->Set_Shader(ShaderClass::_PresetMultiplicativeShader);
 			break;
 		case SHADOW_ALPHA_DECAL:
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetAlphaShader);
+			g_renderBackend->Set_Shader(ShaderClass::_PresetAlphaShader);
 			break;
 		case SHADOW_ADDITIVE_DECAL:
-			DX8Wrapper::Set_Shader(ShaderClass::_PresetAdditiveShader);
+			g_renderBackend->Set_Shader(ShaderClass::_PresetAdditiveShader);
 			break;
 	}
 
@@ -708,7 +757,55 @@ void W3DProjectedShadowManager::flushDecals(W3DShadowTexture *texture, ShadowTyp
 //	DX8Wrapper::Set_DX8_Render_State(D3DRS_ALPHAFUNC,D3DCMP_GREATEREQUAL);
 	//_PresetAlphaSpriteShader
 
-	DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+	g_renderBackend->Apply_Render_State_Changes();	//force update of view and projection matrices
+
+	// W3DNext renderer port: drain the CPU twin batch through the engine's
+	// dynamic buffers (same path RenderVBTile uses). The raw draw below would
+	// land on the never-presented D3D8 device - decals were invisible. The
+	// index values are batch-relative, matching the raw path's base-vertex
+	// convention, so they copy verbatim.
+	if (Is_D3D11_Backend_Active())
+	{
+		const int vcount = nShadowDecalVertsInBatch;
+		const int icount = nShadowDecalPolysInBatch*3;
+		if (vcount > 0 && icount > 0)
+		{
+			DynamicVBAccessClass vb_access(BUFFER_TYPE_DYNAMIC_DX8,DX8_FVF_XYZNDUV2,vcount);
+			{
+				DynamicVBAccessClass::WriteLockClass lock(&vb_access);
+				VertexFormatXYZNDUV2* vb=lock.Get_Formatted_Vertex_Array();
+				if (vb == nullptr)
+					return;
+				const SHADOW_DECAL_VERTEX* src=&zpDecalCpuVerts[nShadowDecalStartBatchVertex];
+				for (int n=0; n<vcount; ++n,++vb,++src)
+				{
+					vb->x=src->x; vb->y=src->y; vb->z=src->z;
+					vb->nx=0.0f; vb->ny=0.0f; vb->nz=0.0f;
+					vb->diffuse=src->diffuse;
+					vb->u1=src->u; vb->v1=src->v;
+					vb->u2=0.0f; vb->v2=0.0f;
+				}
+			}
+			DynamicIBAccessClass ib_access(BUFFER_TYPE_DYNAMIC_DX8,icount);
+			{
+				DynamicIBAccessClass::WriteLockClass lockib(&ib_access);
+				UnsignedShort* ib=lockib.Get_Index_Array();
+				if (ib == nullptr)
+					return;
+				memcpy(ib,&zpDecalCpuIndices[nShadowDecalStartBatchIndex],icount*sizeof(UnsignedShort));
+			}
+			g_renderBackend->Set_Index_Buffer(ib_access,0);
+			g_renderBackend->Set_Vertex_Buffer(vb_access);
+			g_renderBackend->Set_World_Identity();
+			Debug_Statistics::Record_DX8_Polys_And_Vertices(nShadowDecalPolysInBatch,vcount,ShaderClass::_PresetOpaqueShader);
+			g_renderBackend->Draw_Triangles(0,nShadowDecalPolysInBatch,0,vcount);
+		}
+		nShadowDecalStartBatchVertex=nShadowDecalVertsInBuf;
+		nShadowDecalStartBatchIndex=nShadowDecalIndicesInBuf;
+		nShadowDecalPolysInBatch=0;
+		nShadowDecalVertsInBatch=0;
+		return;
+	}
 
 //Alpha Blended Shadows
 //	m_pDev->SetRenderState( D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA );
@@ -1002,7 +1099,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 		if (nShadowDecalVertsInBuf > (SHADOW_DECAL_VERTEX_SIZE-numVerts))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0], shadow->m_type);
-			if (shadowDecalVertexBufferD3D->Lock(0,numVerts*sizeof(SHADOW_DECAL_VERTEX),(unsigned char**)&pvVertices,D3DLOCK_DISCARD) != D3D_OK)
+			if (!ZP_Decal_VB_Lock(0,numVerts,D3DLOCK_DISCARD,&pvVertices))
 				return;
 
 			nShadowDecalStartBatchVertex=0;
@@ -1011,7 +1108,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 			nShadowDecalVertsInBuf=0;
 		}
 		else
-		{	if (shadowDecalVertexBufferD3D->Lock(nShadowDecalVertsInBuf*sizeof(SHADOW_DECAL_VERTEX),numVerts*sizeof(SHADOW_DECAL_VERTEX), (unsigned char**)&pvVertices,D3DLOCK_NOOVERWRITE) != D3D_OK)
+		{	if (!ZP_Decal_VB_Lock(nShadowDecalVertsInBuf,numVerts,D3DLOCK_NOOVERWRITE,&pvVertices))
 				return;
 		}
 
@@ -1069,13 +1166,13 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 			}
 		}
 
-		shadowDecalVertexBufferD3D->Unlock();
+		ZP_Decal_VB_Unlock();
 
 		if (nShadowDecalIndicesInBuf > (SHADOW_DECAL_INDEX_SIZE-numIndex))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0], shadow->m_type);
 
-			if (shadowDecalIndexBufferD3D->Lock(0,numIndex*sizeof(short),(unsigned char**)&pvIndices,D3DLOCK_DISCARD) != D3D_OK)
+			if (!ZP_Decal_IB_Lock(0,numIndex,D3DLOCK_DISCARD,&pvIndices))
 				return;
 
 			nShadowDecalStartBatchIndex=0;
@@ -1084,7 +1181,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 			nShadowDecalIndicesInBuf=0;
 		}
 		else
-		{	if (shadowDecalIndexBufferD3D->Lock(nShadowDecalIndicesInBuf*sizeof(short),numIndex*sizeof(short), (unsigned char**)&pvIndices,D3DLOCK_NOOVERWRITE) != D3D_OK)
+		{	if (!ZP_Decal_IB_Lock(nShadowDecalIndicesInBuf,numIndex,D3DLOCK_NOOVERWRITE,&pvIndices))
 				return;
 		}
 
@@ -1117,7 +1214,7 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 			}
 		}
 
-		shadowDecalIndexBufferD3D->Unlock();
+		ZP_Decal_IB_Unlock();
 
 		Int numPolys = (endX - startX)*(endY - startY)*2;	//2 triangles per cell
 		nShadowDecalPolysInBatch += numPolys;
@@ -1174,7 +1271,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 		if (nShadowDecalVertsInBuf > (SHADOW_DECAL_VERTEX_SIZE-numVerts))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0], shadow->m_type);
-			if (shadowDecalVertexBufferD3D->Lock(0,numVerts*sizeof(SHADOW_DECAL_VERTEX),(unsigned char**)&pvVertices,D3DLOCK_DISCARD) != D3D_OK)
+			if (!ZP_Decal_VB_Lock(0,numVerts,D3DLOCK_DISCARD,&pvVertices))
 				return;
 
 			nShadowDecalStartBatchVertex=0;
@@ -1183,7 +1280,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 			nShadowDecalVertsInBuf=0;
 		}
 		else
-		{	if (shadowDecalVertexBufferD3D->Lock(nShadowDecalVertsInBuf*sizeof(SHADOW_DECAL_VERTEX),numVerts*sizeof(SHADOW_DECAL_VERTEX), (unsigned char**)&pvVertices,D3DLOCK_NOOVERWRITE) != D3D_OK)
+		{	if (!ZP_Decal_VB_Lock(nShadowDecalVertsInBuf,numVerts,D3DLOCK_NOOVERWRITE,&pvVertices))
 				return;
 		}
 
@@ -1230,13 +1327,13 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 			pvVertices++;
 		}
 
-		shadowDecalVertexBufferD3D->Unlock();
+		ZP_Decal_VB_Unlock();
 
 		if (nShadowDecalIndicesInBuf > (SHADOW_DECAL_INDEX_SIZE-numIndex))	//check if room for model verts
 		{	//flush the buffer by drawing the contents and re-locking again
 			flushDecals(shadow->m_shadowTexture[0],shadow->m_type);
 
-			if (shadowDecalIndexBufferD3D->Lock(0,numIndex*sizeof(short),(unsigned char**)&pvIndices,D3DLOCK_DISCARD) != D3D_OK)
+			if (!ZP_Decal_IB_Lock(0,numIndex,D3DLOCK_DISCARD,&pvIndices))
 				return;
 
 			nShadowDecalStartBatchIndex=0;
@@ -1245,7 +1342,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 			nShadowDecalIndicesInBuf=0;
 		}
 		else
-		{	if (shadowDecalIndexBufferD3D->Lock(nShadowDecalIndicesInBuf*sizeof(short),numIndex*sizeof(short), (unsigned char**)&pvIndices,D3DLOCK_NOOVERWRITE) != D3D_OK)
+		{	if (!ZP_Decal_IB_Lock(nShadowDecalIndicesInBuf,numIndex,D3DLOCK_NOOVERWRITE,&pvIndices))
 				return;
 		}
 
@@ -1259,7 +1356,7 @@ void W3DProjectedShadowManager::queueSimpleDecal(W3DProjectedShadow *shadow)
 			pvIndices += 6;
 		}
 
-		shadowDecalIndexBufferD3D->Unlock();
+		ZP_Decal_IB_Unlock();
 
 		Int numPolys = 2;	//2 triangles per decal
 		nShadowDecalPolysInBatch += numPolys;
@@ -1380,7 +1477,7 @@ Int W3DProjectedShadowManager::renderShadows(RenderInfoClass & rinfo)
 
 					//terrain is always visible and affected by all shadows so must render
 					projector->Peek_Material_Pass()->Install_Materials();
-					DX8Wrapper::Apply_Render_State_Changes();	//force update of view and projection matrices
+					g_renderBackend->Apply_Render_State_Changes();	//force update of view and projection matrices
 					if (renderProjectedTerrainShadow(shadow, aaBox))
 						projectionCount++;
 					projector->Peek_Material_Pass()->UnInstall_Materials();
@@ -1709,6 +1806,14 @@ W3DProjectedShadow* W3DProjectedShadowManager::addShadow(RenderObjClass *robj, S
 	if (!m_dynamicRenderTarget || !robj || !TheGlobalData->m_useShadowDecals)
 		return nullptr;	//right now we require hardware render-to-texture support
 
+	// W3DNext renderer port: SHADOW_PROJECTION textures are generated by a
+	// render-to-texture pass on the raw D3D8 device (updateTexture ->
+	// Compute_Texture), which never runs under D3D11 - the decal would draw
+	// with a blank texture. Artist-textured SHADOW_DECALs (the common case)
+	// stay on; runtime-projected ones are skipped until the projector is
+	// ported (ledgered in the parity log).
+	if (Is_D3D11_Backend_Active() && shadowInfo != nullptr && shadowInfo->m_type == SHADOW_PROJECTION)
+		return nullptr;
 
 	if (shadowInfo)
 	{
@@ -1789,6 +1894,9 @@ W3DProjectedShadow* W3DProjectedShadowManager::addShadow(RenderObjClass *robj, S
 	}
 	else
 	{	//no shadow info, assume user wants a projected shadow
+		// W3DNext renderer port: same runtime-projected gate as above.
+		if (Is_D3D11_Backend_Active())
+			return nullptr;
 		strlcpy(texture_name, robj->Get_Name(), ARRAY_SIZE(texture_name));
 
 		st=m_W3DShadowTextureManager->getTexture(texture_name);

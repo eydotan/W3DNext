@@ -278,6 +278,15 @@ void TextureFilterClass::_Init_Filters(TextureFilterMode texture_filter, Anisotr
 
 
 //**********************************************************************************************
+//! Resolved stage-0 mip filter for the D3D11 sampler mirror (see texturefilter.h)
+/*!
+*/
+unsigned TextureFilterClass::_Get_Resolved_Mip_Filter(FilterType type)
+{
+	return _MipMapFilters[0][type];
+}
+
+//**********************************************************************************************
 //! Set mip mapping filter (legacy)
 /*!
 */

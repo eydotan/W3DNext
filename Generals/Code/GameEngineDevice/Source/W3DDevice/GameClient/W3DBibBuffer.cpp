@@ -57,6 +57,7 @@
 #include "W3DDevice/GameClient/W3DDynamicLight.h"
 #include "WW3D2/camera.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/dx8renderer.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
@@ -424,16 +425,16 @@ void W3DBibBuffer::renderBibs()
 		return;
 	}
 	// Setup the vertex buffer, shader & texture.
-	DX8Wrapper::Set_Index_Buffer(m_indexBib,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexBib);
-	DX8Wrapper::Set_Shader(detailAlphaShader);
+	g_renderBackend->Set_Index_Buffer(m_indexBib,0);
+	g_renderBackend->Set_Vertex_Buffer(m_vertexBib);
+	g_renderBackend->Set_Shader(detailAlphaShader);
 	if (m_curNumNormalBibIndices) {
-		DX8Wrapper::Set_Texture(0,m_bibTexture);
-		DX8Wrapper::Draw_Triangles(	0, m_curNumNormalBibIndices/3, 0,	m_curNumNormalBibVertex);
+		g_renderBackend->Set_Texture(0,m_bibTexture);
+		g_renderBackend->Draw_Triangles(	0, m_curNumNormalBibIndices/3, 0,	m_curNumNormalBibVertex);
 	}
 	if (m_curNumBibIndices>m_curNumNormalBibIndices) {
-		DX8Wrapper::Set_Texture(0,m_highlightBibTexture);
-		DX8Wrapper::Draw_Triangles(	m_curNumNormalBibIndices, (m_curNumBibIndices-m_curNumNormalBibIndices)/3,
+		g_renderBackend->Set_Texture(0,m_highlightBibTexture);
+		g_renderBackend->Draw_Triangles(	m_curNumNormalBibIndices, (m_curNumBibIndices-m_curNumNormalBibIndices)/3,
 						m_curNumNormalBibVertex,	m_curNumBibVertices-m_curNumNormalBibVertex);
 	}
 }

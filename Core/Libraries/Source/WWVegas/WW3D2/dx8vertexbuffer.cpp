@@ -45,6 +45,7 @@
 #include "dx8caps.h"
 #include "thread.h"
 #include "wwmemlog.h"
+#include "Backend/RenderBackend.h" // g_renderBackend->Stage_Dynamic_Vertices (D3D11 capture)
 #include <d3dx8core.h>
 
 #define DEFAULT_VB_SIZE 5000
@@ -878,6 +879,16 @@ DynamicVBAccessClass::WriteLockClass::~WriteLockClass()
 		WWASSERT(!dx8_lock);
 		WWDEBUG_SAY(("DynamicVertexBuffer->Unlock()"));
 #endif
+		// D3D11 backend capture (RENDERER_PORT.md step 10): hand the just-written
+		// vertices to the backend while the CPU mapping is still valid - the DX8
+		// dynamic VB discard-locks, so it can't be read back at bind time. No-op on
+		// the DX8 reference backend, so the default path is byte-identical.
+		if (g_renderBackend != nullptr && Vertices != nullptr) {
+			g_renderBackend->Stage_Dynamic_Vertices(
+				Vertices,
+				DynamicVBAccess->Get_Vertex_Count() * DynamicVBAccess->FVF_Info().Get_FVF_Size(),
+				DynamicVBAccess->FVF_Info().Get_FVF());
+		}
 		DX8_Assert();
 		DX8_ErrorCode(static_cast<DX8VertexBufferClass*>(DynamicVBAccess->VertexBuffer)->Get_DX8_Vertex_Buffer()->Unlock());
 		break;

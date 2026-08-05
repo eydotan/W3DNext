@@ -75,6 +75,7 @@ enum AIDebugOptions CPP_11(: Int)
 	AI_DEBUG_CELLS,
 	AI_DEBUG_GROUND_PATHS,
 	AI_DEBUG_ZONES,
+	AI_DEBUG_STRATAGEM_INFLUENCE,	///< Project STRATAGEM world-model heatmap (TheStratagemBrain)
 	AI_DEBUG_END
 };
 

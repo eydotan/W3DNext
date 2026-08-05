@@ -21,6 +21,7 @@
 #include "../../../Include/W3DDevice/GameClient/W3DProfilerFrameCapture.h"
 
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/Backend/RenderBackend.h"
 #include "WW3D2/surfaceclass.h"
 #include "WW3D2/texture.h"
 #include "WW3D2/ww3d.h"
@@ -89,7 +90,7 @@ void W3DProfilerFrameCapture::Capture(UnsignedInt displayWidth, UnsignedInt disp
 	}
 
 	// allocate render target
-	TextureClass *renderTarget = DX8Wrapper::Create_Render_Target(PROFILER_FRAME_IMAGE_SIZE, PROFILER_FRAME_IMAGE_SIZE, WW3D_FORMAT_A8R8G8B8);
+	TextureClass *renderTarget = g_renderBackend->Create_Render_Target(PROFILER_FRAME_IMAGE_SIZE, PROFILER_FRAME_IMAGE_SIZE, WW3D_FORMAT_A8R8G8B8);
 	if (!renderTarget)
 		return;
 
@@ -167,23 +168,30 @@ void W3DProfilerFrameCapture::Capture(UnsignedInt displayWidth, UnsignedInt disp
 
 	// set viewport
 	IDirect3DDevice8 *device = DX8Wrapper::_Get_D3D_Device8();
-	D3DVIEWPORT8 restoreViewport;
-	device->GetViewport(&restoreViewport);
+	D3DVIEWPORT8 d3dRestoreViewport;
+	device->GetViewport(&d3dRestoreViewport);
+	RenderBackendViewport restoreViewport;
+	restoreViewport.x = d3dRestoreViewport.X;
+	restoreViewport.y = d3dRestoreViewport.Y;
+	restoreViewport.width = d3dRestoreViewport.Width;
+	restoreViewport.height = d3dRestoreViewport.Height;
+	restoreViewport.min_z = d3dRestoreViewport.MinZ;
+	restoreViewport.max_z = d3dRestoreViewport.MaxZ;
 
 	SurfaceClass::SurfaceDescription smallRenderDesc;
 	surfaceClass->Get_Description(smallRenderDesc);
 
-	D3DVIEWPORT8 viewport;
-	viewport.X = 0;
-	viewport.Y = 0;
-	viewport.Width = PROFILER_FRAME_IMAGE_SIZE;
-	viewport.Height = smallRenderDesc.Height;
-	viewport.MinZ = 0.0f;
-	viewport.MaxZ = 1.0f;
-	DX8Wrapper::Set_Viewport(&viewport);
+	RenderBackendViewport viewport;
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = PROFILER_FRAME_IMAGE_SIZE;
+	viewport.height = smallRenderDesc.Height;
+	viewport.min_z = 0.0f;
+	viewport.max_z = 1.0f;
+	g_renderBackend->Set_Viewport(viewport);
 
 	// bind swizzle shader
-	DX8Wrapper::Set_Pixel_Shader(m_swizzleShader);
+	g_renderBackend->Set_Pixel_Shader(m_swizzleShader);
 	static const Real kMaskR[4] = {1.0f, 0.0f, 0.0f, 0.0f};
 	static const Real kMaskG[4] = {0.0f, 1.0f, 0.0f, 0.0f};
 	static const Real kMaskB[4] = {0.0f, 0.0f, 1.0f, 0.0f};
@@ -206,11 +214,11 @@ void W3DProfilerFrameCapture::Capture(UnsignedInt displayWidth, UnsignedInt disp
 	vtx[2] = {left,  bottom, 0.0f, 1.0f, 0.0f, 1.0f};
 	vtx[3] = {left,  top,    0.0f, 1.0f, 0.0f, 0.0f};
 	DX8Wrapper::Set_DX8_Texture(0, intermediateTexture);
-	DX8Wrapper::Set_Vertex_Shader(D3DFVF_XYZRHW | D3DFVF_TEX1);
+	g_renderBackend->Set_Vertex_Shader(D3DFVF_XYZRHW | D3DFVF_TEX1);
 	device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vtx, sizeof(QuadVertex));
-	DX8Wrapper::Set_Pixel_Shader(0);
+	g_renderBackend->Set_Pixel_Shader(0);
 	DX8Wrapper::Set_DX8_Texture(0, nullptr);
-	DX8Wrapper::Set_Viewport(&restoreViewport);
+	g_renderBackend->Set_Viewport(restoreViewport);
 	DX8Wrapper::Set_Render_Target(static_cast<IDirect3DSurface8 *>(nullptr));
 
 	// copy the small surface pixels from GPU to CPU

@@ -76,11 +76,18 @@
 // 'unreachable code'. STL violates this...
 #pragma warning(disable : 4702)
 
-// 'local variable is initialized but not referenced'. good thing to know about...
+// 'local variable is initialized but not referenced' (4189) and 'unreferenced local
+// variable' (4101). Good things to know about - kept as hard errors in Debug. But in
+// Release, DEBUG_LOG expands to nothing, so any local used *only* inside a DEBUG_LOG
+// (e.g. STRATAGEM's capture/fitness fingerprints) is legitimately unused and would
+// trip these under /WX. So elevate-to-error only in Debug; disable in Release.
+#ifndef NDEBUG
 #pragma warning(error : 4189)
-
-// 'unreferenced local variable'. good thing to know about...
 #pragma warning(error : 4101)
+#else
+#pragma warning(disable : 4189)
+#pragma warning(disable : 4101)
+#endif
 
 #ifndef PI
 #define PI     3.14159265359f

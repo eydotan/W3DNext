@@ -79,6 +79,7 @@
 #include "GameClient/GameWindowTransitions.h"
 
 #include "GameLogic/AI.h"
+#include "GameLogic/Stratagem/StratagemBrain.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/CaveSystem.h"
 #include "GameLogic/CrateSystem.h"
@@ -1495,6 +1496,9 @@ void GameLogic::tryStartNewGame( Bool loadingSaveGame )
 					case SLOT_BRUTAL_AI : d.setInt(TheKey_skirmishDifficulty, DIFFICULTY_HARD); break;
 					default: break;	 // no setting.
 				}
+				// STRATAGEM: carry the per-slot AI personality (roster index, -1 = none) to the player.
+				if (slot->getStrategistId() >= 0)
+					d.setInt(TheKey_skirmishStrategistId, slot->getStrategistId());
 			}
 
 			AsciiString slotNameAscii;
@@ -3875,6 +3879,13 @@ void GameLogic::update()
 	// update the Artificial Intelligence system
 	{
 		TheAI->UPDATE();
+	}
+
+	// Project STRATAGEM: tick the strategic-AI world model inside the deterministic
+	// logic path, right after the AI. No-op while disabled (D1 scaffold).
+	{
+		if (TheStratagemBrain)
+			TheStratagemBrain->update();
 	}
 
 	// production updates

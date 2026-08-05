@@ -35,6 +35,7 @@
 #include "GameClient/TerrainVisual.h" // for TERRAIN_LOD_MIN definition
 #include "GameClient/GameText.h"
 #include "GameNetwork/NetworkDefs.h"
+#include "GameLogic/Stratagem/StratagemStrategist.h"	// STRATAGEM: -stratagemAI template config
 #include "trim.h"
 
 
@@ -118,6 +119,20 @@ Int parseNoLogOrCrash(char *args[], int)
 Int parseWin(char *args[], int)
 {
 	TheWritableGlobalData->m_windowed = true;
+	TheWritableGlobalData->m_borderless = false;	// true small windowed mode, not borderless-fullscreen
+
+	return 1;
+}
+
+//=============================================================================
+// TheSuperHackers @feature Allow several clients to run side by side for
+// parallel testing. Each instance grabs the next free numbered mutex instead
+// of bailing out (see rts::ClientInstance). Opt-in; normal launches still
+// enforce a single instance.
+//=============================================================================
+Int parseMultiInstance(char *args[], int)
+{
+	rts::ClientInstance::setMultiInstance(TRUE);
 
 	return 1;
 }
@@ -381,6 +396,20 @@ Int parseNoWin(char *args[], int)
 	return 1;
 }
 
+//=============================================================================
+// W3DNext: -exclusive forces true exclusive fullscreen (the old default).
+// Borderless-fullscreen is the default now (safe on Win11 alt-tab); use this
+// only to reclaim exclusive mode - e.g. squeezing max FPS on a weak GPU - and
+// accept the DX8 device-lost freeze risk on focus loss.
+//=============================================================================
+Int parseExclusive(char *args[], int)
+{
+	TheWritableGlobalData->m_windowed = false;
+	TheWritableGlobalData->m_borderless = false;
+
+	return 1;
+}
+
 Int parseFullVersion(char *args[], int num)
 {
 	if (TheVersion && num > 1)
@@ -421,6 +450,229 @@ Int parseHeadless(char *args[], int num)
 	extern bool DX8Wrapper_IsWindowed;
 	DX8Wrapper_IsWindowed = false;
 
+	return 1;
+}
+
+// Project STRATAGEM auto-capture: boot straight into an AI skirmish with the
+// influence overlay on, screenshot it, and exit - fully unattended. Optional
+// next arg is a map path; otherwise the first multiplayer map in the cache is used.
+Int parseStratagemShot(char *args[], int num)
+{
+	TheWritableGlobalData->m_stratagemShot = TRUE;
+	TheWritableGlobalData->m_playIntro = FALSE;
+	TheWritableGlobalData->m_afterIntro = TRUE;
+	TheWritableGlobalData->m_playSizzle = FALSE;
+	TheWritableGlobalData->m_shellMapOn = FALSE;
+	if (num > 1 && args[1] != nullptr && args[1][0] != '-')
+	{
+		TheWritableGlobalData->m_stratagemShotMap.set( args[1] );
+		return 2;
+	}
+	return 1;
+}
+
+// NAVAL Tier-1 verification: boot straight into a skirmish on a water map, spawn a
+// ChinaGunboat, order it across the water, DEBUG_LOG whether it traversed, then exit -
+// fully unattended. Reuses the -stratagemShot auto-skirmish boot path. Optional next
+// arg is the map path (else the first multiplayer map in the cache is used).
+Int parseNavalShot(char *args[], int num)
+{
+	TheWritableGlobalData->m_navalShot = TRUE;
+	TheWritableGlobalData->m_playIntro = FALSE;
+	TheWritableGlobalData->m_afterIntro = TRUE;
+	TheWritableGlobalData->m_playSizzle = FALSE;
+	TheWritableGlobalData->m_shellMapOn = FALSE;
+
+	// Run as a non-primary extra instance so this verification can co-exist with a
+	// retail / Stratagem instance already running (and so it writes its own
+	// DebugLogFileD_InstanceNN.txt instead of clobbering the primary log).
+	rts::ClientInstance::setMultiInstance(TRUE);
+	rts::ClientInstance::skipPrimaryInstance();
+
+	// parseCommandLine() tokenizes the command line on spaces AND quotes, so a map
+	// path such as  Maps\Tournament Lake\Tournament Lake.map  arrives as several
+	// tokens. Re-join the consecutive non-flag tokens (single-space separated, which
+	// is how map paths are spelled) back into the full map name.
+	Int consumed = 1;
+	AsciiString mapName;
+	for (Int i = 1; i < num && args[i] != nullptr && args[i][0] != '-'; ++i)
+	{
+		if (mapName.isNotEmpty())
+			mapName.concat(' ');
+		mapName.concat( args[i] );
+		++consumed;
+	}
+	if (mapName.isNotEmpty())
+		TheWritableGlobalData->m_navalShotMap.set( mapName );
+	return consumed;
+}
+
+// NAVAL demo: AI-vs-AI water sandbox. Boots a skirmish on a water map; an in-engine
+// driver gives two allied sides a War Factory that keeps PRODUCING ChinaGunboats and
+// patrols them around the lake - no combat. Windowed, runs until killed (for watching
+// / screen-capture). Optional next arg is the map path. Co-runs as a non-primary
+// instance like -navalShot.
+Int parseNavalSandbox(char *args[], int num)
+{
+	TheWritableGlobalData->m_navalSandbox = TRUE;
+	TheWritableGlobalData->m_playIntro = FALSE;
+	TheWritableGlobalData->m_afterIntro = TRUE;
+	TheWritableGlobalData->m_playSizzle = FALSE;
+	TheWritableGlobalData->m_shellMapOn = FALSE;
+
+	rts::ClientInstance::setMultiInstance(TRUE);
+	rts::ClientInstance::skipPrimaryInstance();
+
+	// Re-join the space-split map-path tokens (see parseNavalShot for why).
+	Int consumed = 1;
+	AsciiString mapName;
+	for (Int i = 1; i < num && args[i] != nullptr && args[i][0] != '-'; ++i)
+	{
+		if (mapName.isNotEmpty())
+			mapName.concat(' ');
+		mapName.concat( args[i] );
+		++consumed;
+	}
+	if (mapName.isNotEmpty())
+		TheWritableGlobalData->m_navalSandboxMap.set( mapName );
+	return consumed;
+}
+
+// W3DNext renderer port (RENDERER_PORT.md step 10): choose the render backend.
+// Usage: -gfxBackend d3d11   (aliases: dx11). Anything else (dx8/d3d8/omitted)
+// keeps the default DX8 backend. Default OFF -> zero behavior change; when set,
+// Init_Render_Backend constructs D3D11Backend instead of DX8Backend and brings up
+// its own device on the game HWND. Parsed before window creation like -win.
+Int parseGfxBackend(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr && args[1][0] != '-')
+	{
+		if (strcmp(args[1], "d3d11") == 0 || strcmp(args[1], "dx11") == 0)
+			TheWritableGlobalData->m_gfxBackendD3D11 = TRUE;
+		else
+			TheWritableGlobalData->m_gfxBackendD3D11 = FALSE;
+		return 2; // consumed the flag and its value token
+	}
+	return 1;
+}
+
+// W3DNext: bare boolean alias for -gfxBackend d3d11.
+// Registered as both -d3d11 and -dx11 (DX8->D3D11 migration shorthand).
+Int parseD3D11(char *args[], int)
+{
+	TheWritableGlobalData->m_gfxBackendD3D11 = TRUE;
+	return 1;
+}
+
+// W3DNext: bare boolean alias for -gfxBackend dx8 (explicitly select the
+// default DX8 backend; wins over an earlier -dx11/-d3d11 on the same line
+// because later flags overwrite the same GlobalData field).
+Int parseDX8(char *args[], int)
+{
+	TheWritableGlobalData->m_gfxBackendD3D11 = FALSE;
+	return 1;
+}
+
+// W3DNext renderer port: -zpBWFilter <logicframe> deterministically engages
+// the mission BW screen filter at that game-logic frame (screen-filter oracle
+// hook; see W3DDisplay::draw).
+Int parseZPBWFilter(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr && args[1][0] != '-')
+	{
+		TheWritableGlobalData->m_zpBWFilterAtFrame = atoi(args[1]);
+		return 2;
+	}
+	TheWritableGlobalData->m_zpBWFilterAtFrame = 60;
+	return 1;
+}
+
+// Project STRATAGEM: assign a Strategist personality template to skirmish AIs.
+// Usage: -stratagemAI <name>  (rommel | montgomery | eisenhower | giap | zhukov).
+// When set, each skirmish AI gets that personality+planner (see Player::setPlayerType);
+// when unset, AIs are unchanged stock behavior.
+Int parseStratagemAI(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr && args[1][0] != '-')
+	{
+		StratagemAISetTemplateId( args[1] );
+		return 2;
+	}
+	return 1;
+}
+
+// Project STRATAGEM: fixed match seed for the auto-capture harness (default 1337).
+// Vary it across -multiInstance runs to get independent deterministic samples.
+Int parseStratagemSeed(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr)
+	{
+		StratagemAISetSeed( atoi( args[1] ) );
+		return 2;
+	}
+	return 1;
+}
+
+// Project STRATAGEM: match length in capture samples (default 16). Larger values run
+// the AI-vs-baseline match long enough to reach combat for the fitness metric.
+Int parseStratagemShots(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr)
+	{
+		StratagemAISetShots( atoi( args[1] ) );
+		return 2;
+	}
+	return 1;
+}
+
+// Project STRATAGEM: assign the subject skirmish AI an ARBITRARY 14-trait vector (the
+// optimization search space) as comma-separated 0..1 values, in StratagemTraits order:
+//   aggression,economy,techPriority,riskTolerance,harassment,expansion,defensiveness,
+//   adaptiveness,scouting,commitDiscipline,randomness,buildRigidity,tempo,grudge
+// Takes precedence over -stratagemAI. e.g. -stratagemTraits 0.85,0.3,0.3,0.7,0.8,...(14)
+Int parseStratagemTraits(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr)
+	{
+		Real t[14];
+		Int n = 0;
+		const char *p = args[1];
+		while (*p && n < 14)
+		{
+			t[n++] = (Real)atof( p );
+			while (*p && *p != ',') ++p;   // skip to next comma
+			if (*p == ',') ++p;
+		}
+		if (n == 14)
+			StratagemAISetTraits( t, 14 );
+		return 2;
+	}
+	return 1;
+}
+
+// Project STRATAGEM: test hook - stamp a Strategist roster index (0..N-1, or -1 none) onto
+// the harness's skirmish slot 1, exercising the per-slot lobby assignment path headlessly.
+Int parseStratagemSlotAI(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr)
+	{
+		StratagemAISetSlotStrategist( atoi( args[1] ) );
+		return 2;
+	}
+	return 1;
+}
+
+// Project STRATAGEM: pin both harness AIs to one faction (e.g. "China") for controlled matchups.
+Int parseStratagemFaction(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr && args[1][0] != '-') { StratagemAISetFaction( args[1] ); return 2; }
+	return 1;
+}
+
+// Project STRATAGEM: set the slot-2 opponent general by name (training harness, e.g. "rommel").
+Int parseStratagemOpponentAI(char *args[], int num)
+{
+	if (num > 1 && args[1] != nullptr && args[1][0] != '-') { StratagemAISetOpponent( args[1] ); return 2; }
 	return 1;
 }
 
@@ -1127,6 +1379,8 @@ Int parseClearDebugLevel(char *args[], int num)
 static CommandLineParam paramsForStartup[] =
 {
 	{ "-win", parseWin },
+	{ "-exclusive", parseExclusive },
+	{ "-multiInstance", parseMultiInstance },
 	{ "-fullscreen", parseNoWin },
 
 	// TheSuperHackers @feature helmutbuhler 11/04/2025
@@ -1144,6 +1398,36 @@ static CommandLineParam paramsForStartup[] =
 	// (If you have 4 cores, call it with -jobs 4)
 	// If you do not call this, all replays will be simulated in sequence in the same process.
 	{ "-jobs", parseJobs },
+
+	// Project STRATAGEM: unattended AI-skirmish + influence-overlay screenshot capture.
+	{ "-stratagemShot", parseStratagemShot },
+	// NAVAL Tier-1: unattended skirmish that spawns a gunboat and verifies water movement.
+	{ "-navalShot", parseNavalShot },
+	// NAVAL demo: AI-vs-AI water sandbox - two allied sides produce + patrol gunboats.
+	{ "-navalSandbox", parseNavalSandbox },
+	// W3DNext renderer port: pick the render backend (default DX8). -gfxBackend d3d11
+	// flips to the D3D11 backend; -d3d11/-dx11 are bare boolean aliases, -dx8
+	// explicitly selects the default DX8 backend.
+	{ "-gfxBackend", parseGfxBackend },
+	{ "-d3d11", parseD3D11 },
+	{ "-dx11", parseD3D11 },
+	{ "-dx8", parseDX8 },
+	// W3DNext renderer port: deterministic BW screen-filter engage (oracle hook).
+	{ "-zpBWFilter", parseZPBWFilter },
+	// Project STRATAGEM: assign a Strategist personality to skirmish AIs.
+	{ "-stratagemAI", parseStratagemAI },
+	// Project STRATAGEM: fixed match seed for the auto-capture harness.
+	{ "-stratagemSeed", parseStratagemSeed },
+	// Project STRATAGEM: match length (capture samples); larger = runs to combat for fitness.
+	{ "-stratagemShots", parseStratagemShots },
+	// Project STRATAGEM: arbitrary 14-trait vector for the subject AI (sweep search space).
+	{ "-stratagemTraits", parseStratagemTraits },
+	// Project STRATAGEM: per-slot lobby-path test hook (roster index onto harness slot 1).
+	{ "-stratagemSlotAI", parseStratagemSlotAI },
+	// Project STRATAGEM: pin both harness AIs to a faction (controlled matchup, e.g. China-v-China).
+	{ "-stratagemFaction", parseStratagemFaction },
+	// Project STRATAGEM: slot-2 opponent general by name (training harness).
+	{ "-stratagemOpponentAI", parseStratagemOpponentAI },
 };
 
 // These Params are parsed during Engine Init before INI data is loaded

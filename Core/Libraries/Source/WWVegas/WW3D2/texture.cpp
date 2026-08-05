@@ -89,6 +89,8 @@ TextureBaseClass::TextureBaseClass
    Name(""),
 	FullPath(""),
 	texture_id(unused_texture_id++),
+	D3DGeneration(0),
+	ProceduralCacheable(false),
 	IsLightmap(false),
 	IsProcedural(false),
 	IsReducible(reducible),
@@ -123,7 +125,13 @@ TextureBaseClass::~TextureBaseClass()
 	{
 		D3DTexture->Release();
 		D3DTexture = nullptr;
+		++D3DGeneration;
 	}
+
+	// W3DNext: drop this texture's uploaded D3D11 copy. Purely memory hygiene -
+	// texture ids are never reused, so a MISSED eviction can only leak, never
+	// alias onto a later texture (no-op on the DX8 backend).
+	D3D11_Evict_Cached_Texture(texture_id);
 
 	DX8TextureManagerClass::Remove(this);
 }
@@ -205,6 +213,7 @@ void TextureBaseClass::Invalidate()
 	{
 		D3DTexture->Release();
 		D3DTexture = nullptr;
+		++D3DGeneration;
 	}
 
 	Initialized=false;
@@ -271,6 +280,7 @@ void TextureBaseClass::Set_D3D_Base_Texture(IDirect3DBaseTexture8* tex)
 		D3DTexture->Release();
 	}
 	D3DTexture = tex;
+	++D3DGeneration;
 	if (D3DTexture != nullptr) {
 		D3DTexture->AddRef();
 	}
@@ -286,6 +296,7 @@ void TextureBaseClass::Load_Locked_Surface()
 	WWPROFILE(("TextureClass::Load_Locked_Surface()"));
 	if (D3DTexture) D3DTexture->Release();
 	D3DTexture=nullptr;
+	++D3DGeneration;
 	TextureLoader::Request_Thumbnail(this);
 	Initialized=false;
 }

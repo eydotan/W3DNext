@@ -710,10 +710,33 @@ static Bool initializeAppWindows( HINSTANCE hInstance, Int nCmdShow, Bool runWin
 
    // Create our main window
 	windowStyle =  WS_POPUP|WS_VISIBLE;
+	// W3DNext: WS_VISIBLE at CreateWindow activates the window immediately,
+	// defeating the harness mode's SW_SHOWNOACTIVATE below - create hidden and
+	// let the no-activate ShowWindow do the (only) reveal.
+	if (TheZPUnattendedHarness)
+		windowStyle &= ~WS_VISIBLE;
+	// W3DNext: borderless-fullscreen = a frameless popup covering the desktop, over a
+	// *windowed* device (no exclusive mode -> no Win11 alt-tab device-lost freeze). Not
+	// topmost, so alt-tab works. -exclusive (m_borderless=false) keeps the old exclusive
+	// path; -win keeps the small caption window.
+	Bool runBorderless = TheGlobalData->m_borderless && !runWindowed;
 	if (runWindowed)
 		windowStyle |= WS_MINIMIZEBOX | WS_SYSMENU | WS_DLGFRAME | WS_CAPTION;
+	else if (runBorderless)
+		windowStyle |= WS_SYSMENU;
 	else
 		windowStyle |= WS_EX_TOPMOST | WS_SYSMENU;
+
+	if (runBorderless)
+	{
+		// Render at desktop resolution so the frameless window truly fills the screen
+		// (a windowed D3D backbuffer matches the client area). A desktop-sized window
+		// also lands at (0,0) via the existing center math below.
+		startWidth  = GetSystemMetrics( SM_CXSCREEN );
+		startHeight = GetSystemMetrics( SM_CYSCREEN );
+		TheWritableGlobalData->m_xResolution = startWidth;
+		TheWritableGlobalData->m_yResolution = startHeight;
+	}
 
 	RECT rect;
 	rect.left = 0;
@@ -747,7 +770,19 @@ static Bool initializeAppWindows( HINSTANCE hInstance, Int nCmdShow, Bool runWin
 														nullptr );
 
 
-	if (!runWindowed)
+	if (TheZPUnattendedHarness)
+	{
+		// W3DNext: harness runs never steal focus or the z-order - shown
+		// WITHOUT activation, at the bottom of the z-order, so a (remote)
+		// user keeps working. NOT minimized: W3DDisplay::draw() early-returns
+		// under IsIconic, which would kill rendering and every framedump.
+		SetWindowPos(hWnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
+		ShowWindow( hWnd, SW_SHOWNOACTIVATE );
+		UpdateWindow( hWnd );
+	}
+	else
+	{
+	if (!runWindowed && !runBorderless)
 	{	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0,SWP_NOSIZE |SWP_NOMOVE);
 	}
 	else
@@ -758,6 +793,7 @@ static Bool initializeAppWindows( HINSTANCE hInstance, Int nCmdShow, Bool runWin
 	SetForegroundWindow(hWnd);
 	ShowWindow( hWnd, nCmdShow );
 	UpdateWindow( hWnd );
+	}
 
 	// save our application window handle for future use
 	ApplicationHWnd = hWnd;
@@ -873,6 +909,13 @@ Int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance,
 #endif
 
 		CommandLine::parseCommandLineForStartup();
+
+		// W3DNext: unattended harness runs behave as quiet background
+		// processes - no pointer capture (Mouse::canCapture), no focus theft,
+		// window starts minimized (initializeAppWindows). See Mouse.h.
+		TheZPUnattendedHarness = TheGlobalData->m_stratagemShot
+			|| TheGlobalData->m_navalShot || TheGlobalData->m_navalSandbox;
+
 #ifdef RTS_ENABLE_CRASHDUMP
 		// Initialize minidump facilities - requires TheGlobalData so performed after parseCommandLineForStartup
 		MiniDumper::initMiniDumper(TheGlobalData->getPath_UserData());

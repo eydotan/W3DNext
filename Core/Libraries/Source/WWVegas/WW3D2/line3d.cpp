@@ -57,6 +57,7 @@
 #include "dx8vertexbuffer.h"
 #include "dx8indexbuffer.h"
 #include "dx8fvf.h"
+#include "Backend/RenderBackend.h"
 
 // 12 Triangles for index buffer
 const unsigned short Indices[]=
@@ -267,13 +268,13 @@ void Line3DClass::Render(RenderInfoClass & rinfo)
 		return;
 	}
 
-	DX8Wrapper::Set_Shader(Shader);
-	DX8Wrapper::Set_Texture(0,nullptr);
+	g_renderBackend->Set_Shader(Shader);
+	g_renderBackend->Set_Texture(0,nullptr);
 	VertexMaterialClass *vm=VertexMaterialClass::Get_Preset(VertexMaterialClass::PRELIT_DIFFUSE);
-	DX8Wrapper::Set_Material(vm);
+	g_renderBackend->Set_Material(vm);
 	REF_PTR_RELEASE(vm);
 
-	DX8Wrapper::Set_Transform(D3DTS_WORLD,Transform);
+	g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD,Transform);
 
 	DynamicVBAccessClass vb(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,8);
 	{
@@ -299,9 +300,11 @@ void Line3DClass::Render(RenderInfoClass & rinfo)
 			mem[i]=Indices[i];
 	}
 
-	DX8Wrapper::Set_Vertex_Buffer(vb);
-	DX8Wrapper::Set_Index_Buffer(ib,0);
-	DX8Wrapper::Draw_Triangles(0,36/3,0,8);
+	g_renderBackend->Set_Vertex_Buffer(vb);
+	g_renderBackend->Set_Index_Buffer(ib,0);
+	// Representative call site migrated to the render backend interface to
+	// prove the g_renderBackend plumbing links (see IRenderBackend.h).
+	g_renderBackend->Draw_Triangles(0,36/3,0,8);
 }
 
 /**************************************************************************

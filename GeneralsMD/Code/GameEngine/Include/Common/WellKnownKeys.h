@@ -878,6 +878,13 @@ DEFINE_KEY(skirmishDifficulty)
 
 /**
 	Which: Player Properties
+	Type: Int
+	Usage: (optional) STRATAGEM AI personality (base-template roster index), -1/absent = none
+*/
+DEFINE_KEY(skirmishStrategistId)
+
+/**
+	Which: Player Properties
 	Type: Bool
 	Usage: (optional) if present, signifies if the player is the local player
 */

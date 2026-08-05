@@ -236,6 +236,13 @@ set(GAMEENGINE_SRC
     Include/GameLogic/AISkirmishPlayer.h
     Include/GameLogic/AIStateMachine.h
     Include/GameLogic/AITNGuard.h
+    Include/GameLogic/Stratagem/StratagemBrain.h
+    Include/GameLogic/Stratagem/StratagemInfluenceMap.h
+    Include/GameLogic/Stratagem/StratagemPlanner.h
+    Include/GameLogic/Stratagem/StratagemPlannerParams.h
+    Include/GameLogic/Stratagem/StratagemProfile.h
+    Include/GameLogic/Stratagem/StratagemStrategist.h
+    Include/GameLogic/Stratagem/StratagemTemplates.h
     Include/GameLogic/Armor.h
     Include/GameLogic/ArmorSet.h
 #    Include/GameLogic/CaveSystem.h
@@ -834,6 +841,13 @@ set(GAMEENGINE_SRC
     Source/GameLogic/AI/AITNGuard.cpp
     Source/GameLogic/AI/Squad.cpp
     Source/GameLogic/AI/TurretAI.cpp
+    Source/GameLogic/AI/Stratagem/StratagemBrain.cpp
+    Source/GameLogic/AI/Stratagem/StratagemInfluenceMap.cpp
+    Source/GameLogic/AI/Stratagem/StratagemPlanner.cpp
+    Source/GameLogic/AI/Stratagem/StratagemPlannerParams.cpp
+    Source/GameLogic/AI/Stratagem/StratagemProfile.cpp
+    Source/GameLogic/AI/Stratagem/StratagemStrategist.cpp
+    Source/GameLogic/AI/Stratagem/StratagemTemplates.cpp
     Source/GameLogic/Map/PolygonTrigger.cpp
     Source/GameLogic/Map/SidesList.cpp
     Source/GameLogic/Map/TerrainLogic.cpp

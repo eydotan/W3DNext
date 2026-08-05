@@ -1549,6 +1549,15 @@ Int ThingTemplate::calcTimeToBuild( const Player* player) const
 	Real factionModifier = 1 + player->getProductionTimeChangePercent( getName() );
 	buildTime *= factionModifier;
 
+	// W3DNext DEVMODE: speed up all construction (structures, units, AI) 10x so
+	// the game is comfortable to play during development. Toggle via ZeroPowerDevMode.
+	if( TheGlobalData->m_zpDevMode )
+	{
+		buildTime /= 10;
+		if( buildTime < 1 )
+			buildTime = 1;
+	}
+
 #if defined(RTS_DEBUG) || defined(_ALLOW_DEBUG_CHEATS_IN_RELEASE)
 	if( player->buildsInstantly() )
 	{

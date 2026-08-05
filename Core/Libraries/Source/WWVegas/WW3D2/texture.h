@@ -108,6 +108,15 @@ public:
 
 	unsigned Get_ID() const { return texture_id; }	// Each textrure has a unique id
 
+	// W3DNext renderer port: bumped by EVERY mutation of D3DTexture (see the
+	// assignment sites in texture.cpp and Poke_Texture below). The D3D11 backend
+	// keys its uploaded-texture cache on (Get_ID(), Get_D3D_Generation()): the id
+	// is never reused, so it identifies the instance, and the generation changes
+	// whenever the underlying D3D8 surface is replaced (reload, mip reduction,
+	// thumbnail->full, invalidate). A cached upload therefore cannot outlive the
+	// bytes it was made from. Harmless on the DX8 path (nothing reads it).
+	unsigned Get_D3D_Generation() const { return D3DGeneration; }
+
 	// The number of Mip levels in the texture
 	unsigned int Get_Mip_Level_Count() const
 	{
@@ -139,6 +148,17 @@ public:
 	bool Is_Initialized() const { return Initialized; }
 	bool Is_Lightmap() const { return IsLightmap; }
 	bool Is_Procedural() const { return IsProcedural; }
+
+	// W3DNext renderer port: a procedural texture whose bytes are written
+	// ONLY between creation and its first bind (and whose later changes go
+	// through a full release-and-recreate, i.e. a new id) may declare itself
+	// cacheable so the D3D11 backend stops re-uploading it on every bind.
+	// The terrain texture family (TerrainTex.cpp) qualifies: update()/
+	// updateFlat() run once at creation and every refresh path REF_PTR_RELEASEs
+	// and news a fresh instance. Textures mutated in place mid-life (video
+	// buffers, radar) must NOT set this. Harmless on the DX8 path.
+	bool Is_Procedural_Cacheable() const { return ProceduralCacheable; }
+	void Set_Procedural_Cacheable(bool cacheable) { ProceduralCacheable = cacheable; }
 	bool Is_Reducible() const { return IsReducible; } //can texture be reduced in resolution for LOD purposes?
 
 	static int _Get_Total_Locked_Surface_Size();
@@ -203,7 +223,7 @@ public:
 protected:
 
 	void Load_Locked_Surface();
-	void Poke_Texture(IDirect3DBaseTexture8* tex) { D3DTexture = tex; }
+	void Poke_Texture(IDirect3DBaseTexture8* tex) { D3DTexture = tex; ++D3DGeneration; }
 
 	bool Initialized;
 
@@ -238,6 +258,12 @@ private:
 
 	// Unique id
 	unsigned texture_id;
+
+	// W3DNext: generation of the D3DTexture pointer (see Get_D3D_Generation).
+	unsigned D3DGeneration;
+
+	// W3DNext: see Is_Procedural_Cacheable above.
+	bool ProceduralCacheable;
 
 	// Support for self-managed textures
 

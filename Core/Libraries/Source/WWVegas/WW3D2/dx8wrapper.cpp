@@ -56,6 +56,7 @@
 #include "dx8vertexbuffer.h"
 #include "dx8indexbuffer.h"
 #include "dx8renderer.h"
+#include "Backend/RenderBackend.h"
 #include "ww3d.h"
 #include "camera.h"
 #include "wwstring.h"
@@ -390,6 +391,11 @@ void DX8Wrapper::Do_Onetime_Device_Dependent_Inits()
 	TextureLoader::Init();
 
 	Set_Default_Global_Render_States();
+
+	// Construct the global IRenderBackend instance now that the D3D device is
+	// ready, then let it bring up any device of its own.
+	Init_Render_Backend();
+	g_renderBackend->Initialize(_Hwnd, ResolutionWidth, ResolutionHeight);
 }
 
 inline DWORD F2DW(float f) { return *((unsigned*)&f); }
@@ -450,6 +456,11 @@ void DX8Wrapper::Invalidate_Cached_Render_States()
 
 void DX8Wrapper::Do_Onetime_Device_Dependent_Shutdowns()
 {
+	// Tear down the render backend before the D3D device is released so any
+	// backend-owned resources get released first. (Null-guarded internally in
+	// case shutdown runs without a matching init.)
+	Shutdown_Render_Backend();
+
 	/*
 	** Shutdown ww3d systems
 	*/
@@ -1663,6 +1674,119 @@ void DX8Wrapper::Begin_Scene()
 	DX8WebBrowser::Update();
 }
 
+// Env-gated backbuffer dump (ZP_DX8_FRAMEDUMP=<path-prefix>) - the DX8 twin of
+// the D3D11 backend's ZP_D3D11_FRAMEDUMP (D3D11Backend.cpp Dump_Back_Buffer):
+// at flip frames 300/600/900, copy the backbuffer to a lockable render target
+// and write <prefix>_fNNN.ppm (binary P6, same naming/format as the D3D11
+// dump) plus a mean-luminance log line. Focus-independent ground truth for
+// what the backend rendered, so DX8-vs-D3D11 A/B frames are frame-matched and
+// directly consumable by w3d_parity_diff. Only reached in DX8 mode: under
+// D3D11 the backend's own End_Scene handles present (and its own dump).
+static void ZP_Dump_DX8_Back_Buffer(IDirect3DDevice8 * device)
+{
+	static const char * s_prefix = nullptr;
+	static bool s_checked = false;
+	static unsigned int s_frame = 0;
+	// Dump frames: default 300/600/900; ZP_FRAMEDUMP_FRAMES="900,2700" overrides
+	// (shared with the D3D11 twin) so in-world runs can dump past the load screen.
+	static unsigned int s_frames[8] = { 300, 600, 900, 0, 0, 0, 0, 0 };
+	if (!s_checked) {
+		s_checked = true;
+		s_prefix = getenv("ZP_DX8_FRAMEDUMP");
+		if (s_prefix != nullptr && s_prefix[0] == '\0') {
+			s_prefix = nullptr;
+		}
+		const char * fl = getenv("ZP_FRAMEDUMP_FRAMES");
+		if (fl != nullptr && fl[0] != '\0') {
+			int n = 0;
+			for (const char * c = fl; *c != '\0' && n < 8;) {
+				unsigned int v = 0;
+				while (*c >= '0' && *c <= '9') { v = v * 10u + (unsigned int)(*c - '0'); ++c; }
+				if (v != 0u) s_frames[n++] = v;
+				while (*c != '\0' && (*c < '0' || *c > '9')) ++c;
+			}
+			for (int i = n; i < 8; ++i) s_frames[i] = 0;
+		}
+	}
+	if (s_prefix == nullptr || device == nullptr) {
+		return;
+	}
+	const unsigned int frame = ++s_frame;
+	bool want = false;
+	for (int i = 0; i < 8 && s_frames[i] != 0u; ++i) {
+		if (frame == s_frames[i]) { want = true; break; }
+	}
+	if (!want) {
+		return;
+	}
+
+	IDirect3DSurface8 * back = nullptr;
+	if (FAILED(device->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &back)) || back == nullptr) {
+		return;
+	}
+	D3DSURFACE_DESC desc;
+	back->GetDesc(&desc);
+	// The backbuffer itself is not lockable; CopyRects into a lockable
+	// same-format render target and read that.
+	IDirect3DSurface8 * copy = nullptr;
+	if (SUCCEEDED(device->CreateRenderTarget(desc.Width, desc.Height, desc.Format,
+			D3DMULTISAMPLE_NONE, TRUE, &copy)) && copy != nullptr) {
+		if (SUCCEEDED(device->CopyRects(back, nullptr, 0, copy, nullptr))) {
+			D3DLOCKED_RECT lr;
+			if (SUCCEEDED(copy->LockRect(&lr, nullptr, D3DLOCK_READONLY))) {
+				char path[512];
+				snprintf(path, sizeof(path), "%s_f%u.ppm", s_prefix, frame);
+				FILE * f = fopen(path, "wb");
+				if (f != nullptr) {
+					unsigned long long lum = 0;
+					fprintf(f, "P6\n%u %u\n255\n", (unsigned int)desc.Width, (unsigned int)desc.Height);
+					const bool is32 = (desc.Format == D3DFMT_X8R8G8B8 || desc.Format == D3DFMT_A8R8G8B8);
+					for (unsigned int y = 0; y < desc.Height; ++y) {
+						const unsigned char * row = static_cast<const unsigned char *>(lr.pBits) + (size_t)y * lr.Pitch;
+						for (unsigned int x = 0; x < desc.Width; ++x) {
+							unsigned char rgb[3];
+							if (is32) {
+								// X8R8G8B8/A8R8G8B8 is BGRA in memory
+								rgb[0] = row[x * 4 + 2];
+								rgb[1] = row[x * 4 + 1];
+								rgb[2] = row[x * 4 + 0];
+							} else {
+								// R5G6B5 fallback
+								const unsigned short p = reinterpret_cast<const unsigned short *>(row)[x];
+								rgb[0] = (unsigned char)(((p >> 11) & 0x1F) * 255 / 31);
+								rgb[1] = (unsigned char)(((p >> 5) & 0x3F) * 255 / 63);
+								rgb[2] = (unsigned char)((p & 0x1F) * 255 / 31);
+							}
+							fwrite(rgb, 1, 3, f);
+							lum += rgb[0] + rgb[1] + rgb[2];
+						}
+					}
+					fclose(f);
+					const double mean = (double)lum / ((double)desc.Width * desc.Height * 3.0);
+					const char * lp = getenv("ZP_D3D11_LOG");
+					char lpath[512];
+					if (lp == nullptr) {
+						snprintf(lpath, sizeof(lpath), "%s.log", s_prefix);
+						lp = lpath;
+					}
+					FILE * lf = fopen(lp, "a");
+					if (lf != nullptr) {
+						// t_ms mirrors the D3D11 twin so one parser reads fps from
+						// either backend's dump log. See the D3D11 comment.
+						fprintf(lf, "[DX8 framedump] f%u %ux%u meanlum=%.2f t_ms=%llu -> %s\n",
+							frame, (unsigned int)desc.Width, (unsigned int)desc.Height, mean,
+							(unsigned long long)GetTickCount64(), path);
+						fclose(lf);
+					}
+				}
+				copy->UnlockRect();
+			}
+		}
+		copy->Release();
+	}
+	back->Release();
+}
+
 void DX8Wrapper::End_Scene(bool flip_frames)
 {
 	DX8_THREAD_ASSERT();
@@ -1672,6 +1796,7 @@ void DX8Wrapper::End_Scene(bool flip_frames)
 
 	if (flip_frames) {
 		DX8_Assert();
+		ZP_Dump_DX8_Back_Buffer(_Get_D3D_Device8());
 		HRESULT hr;
 		{
 			WWPROFILE("DX8Device::Present()");
@@ -2019,6 +2144,32 @@ void DX8Wrapper::Draw(
 	SNAPSHOT_SAY(("DX8 - draw"));
 
 	Apply_Render_State_Changes();
+
+	// W3DNext renderer port: DX8 twin of the D3D11 drawlog (env
+	// ZP_DX8_DRAWLOG = output path) - logs the applied shader word + stage-0
+	// texture per draw, so cross-backend state divergences can be proven from
+	// two logs instead of guessed from one. Zero cost when the env is absent.
+	{
+		static FILE * s_dl = nullptr;
+		static bool s_dlChecked = false;
+		if (!s_dlChecked) {
+			s_dlChecked = true;
+			const char * dlPath = getenv("ZP_DX8_DRAWLOG");
+			if (dlPath != nullptr && dlPath[0] != '\0') {
+				s_dl = fopen(dlPath, "a");
+			}
+		}
+		if (s_dl != nullptr) {
+			static unsigned s_dlIndex = 0;
+			const char * texname = "";
+			if (render_state.Textures[0] != nullptr) {
+				texname = render_state.Textures[0]->Get_Texture_Name().str();
+			}
+			fprintf(s_dl, "[draw %u] polys=%u verts=%u shader=0x%08x tex=%s\n",
+				s_dlIndex++, (unsigned)polygon_count, (unsigned)vertex_count,
+				render_state.shader.Get_Bits(), texname);
+		}
+	}
 
 	// Debug feature to disable triangle drawing...
 	if (!_Is_Triangle_Draw_Enabled()) return;

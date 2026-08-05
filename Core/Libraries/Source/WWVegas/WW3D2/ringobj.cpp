@@ -89,6 +89,7 @@
 #include "statistics.h"
 #include "predlod.h"
 #include "dx8wrapper.h"
+#include "Backend/RenderBackend.h"
 #include "dx8indexbuffer.h"
 #include "dx8vertexbuffer.h"
 #include "sortingrenderer.h"
@@ -531,9 +532,9 @@ void RingRenderObjClass::render_ring(RenderInfoClass & rinfo,const Vector3 & cen
 	} else {
 		RingShader.Set_Texturing (ShaderClass::TEXTURING_DISABLE);
 	}
-	DX8Wrapper::Set_Shader(RingShader);
-	DX8Wrapper::Set_Texture(0,RingTexture);
-	DX8Wrapper::Set_Material(RingMaterial);
+	g_renderBackend->Set_Shader(RingShader);
+	g_renderBackend->Set_Texture(0,RingTexture);
+	g_renderBackend->Set_Material(RingMaterial);
 
 	// Enable sorting if the primitive is translucent, alpha testing is not enabled, and sorting is enabled globally.
 	const bool sort = (RingShader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO) && (RingShader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE) && (WW3D::Is_Sorting_Enabled());
@@ -586,13 +587,13 @@ void RingRenderObjClass::render_ring(RenderInfoClass & rinfo,const Vector3 & cen
 		}
 	}
 
-	DX8Wrapper::Set_Vertex_Buffer(vb);
-	DX8Wrapper::Set_Index_Buffer(ib,0);
+	g_renderBackend->Set_Vertex_Buffer(vb);
+	g_renderBackend->Set_Index_Buffer(ib,0);
 
 	if (sort) {
 		SortingRendererClass::Insert_Triangles(Get_Bounding_Sphere(), 0, ring.face_ct, 0, ring.Vertex_ct);
 	} else {
-		DX8Wrapper::Draw_Triangles(0, ring.face_ct, 0, ring.Vertex_ct);
+		g_renderBackend->Draw_Triangles(0, ring.face_ct, 0, ring.Vertex_ct);
 	}
 
 }
@@ -722,9 +723,9 @@ void RingRenderObjClass::Render(RenderInfoClass & rinfo)
 
 			Matrix3D temp;
 			temp.Look_At(obj_position, obj_position + camera_z_vector, 0.0f);
-			DX8Wrapper::Set_Transform(D3DTS_WORLD, temp);
+			g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD, temp);
 		} else {
-			DX8Wrapper::Set_Transform(D3DTS_WORLD, Transform);
+			g_renderBackend->Set_Transform(RB_TRANSFORM_WORLD, Transform);
 		}
 
 		//

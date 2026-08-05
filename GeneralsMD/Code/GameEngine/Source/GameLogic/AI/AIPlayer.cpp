@@ -48,6 +48,7 @@
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/AIPlayer.h"
+#include "GameLogic/Stratagem/StratagemStrategist.h"	// STRATAGEM: per-AI planner execution
 #include "GameLogic/SidesList.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/AIPathfind.h"
@@ -84,7 +85,8 @@ m_dozerQueuedForRepair(false),
 m_supplySourceAttackCheckFrame(0),
 m_attackedSupplyCenter(INVALID_ID),
 m_teamSeconds(10),
-m_curWarehouseID(INVALID_ID)
+m_curWarehouseID(INVALID_ID),
+m_stratagem(nullptr)	// STRATAGEM: assigned later iff a Strategist is chosen for this slot
 {
 	m_frameLastBuildingBuilt = TheGameLogic->getFrame();
 	p->setCanBuildUnits(false); // turn off ai production by default.
@@ -105,6 +107,7 @@ m_curWarehouseID(INVALID_ID)
 AIPlayer::~AIPlayer()
 {
 	clearTeamsInQueue();
+	if (m_stratagem) { delete m_stratagem; m_stratagem = nullptr; }	// STRATAGEM
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -1745,6 +1748,11 @@ Bool AIPlayer::selectTeamToBuild()
 		}	else if (m_player->getMoney()->countMoney() > TheAI->getAiData()->m_resourcesWealthy) {
 			m_teamTimer = m_teamTimer/TheAI->getAiData()->m_teamWealthyMod;
 		}
+		// STRATAGEM: personality scales the team-build cadence (aggressive faster, turtle slower).
+		if (m_stratagem) {
+			m_teamTimer = (Int)(m_teamTimer * m_stratagem->teamCadenceScale());
+			if (m_teamTimer < 1) m_teamTimer = 1;
+		}
 		return true;
 	}
 	return false;
@@ -2807,6 +2815,15 @@ void AIPlayer::checkReadyTeams()
 			}
 			if (timeExpired) allIdle = true;
 			if (allIdle) {
+				// STRATAGEM (P2.2): bank attack teams at the rally until the Strategist commits
+				// (force concentration met for an aggressive posture). This turns the stock
+				// "launch as soon as gathered" behavior into personality-driven timing: Rommel
+				// commits early, a turtle banks a bigger force. The stock 60s timeExpired path is
+				// the safety valve, so even a cautious personality strikes eventually - no deadlock.
+				if (m_stratagem && !team->m_reinforcement && !timeExpired
+						&& !m_stratagem->directive().commitAttack) {
+					continue;   // leave this team in the ready queue; re-check next frame
+				}
 				if (!team->m_sentToStartLocation) {
 					team->m_sentToStartLocation = true;
 					/*
@@ -3033,6 +3050,28 @@ void AIPlayer::doUpgradesAndSkills()
 void AIPlayer::update()
 {
 	//USE_PERF_TIMER(AIPlayer_update)
+
+	// STRATAGEM: re-plan the strategic directive on the Strategist's cadence (no-op if none assigned).
+	if (m_stratagem) {
+		m_stratagem->think(m_player, TheGameLogic->getFrame());
+#if defined(RTS_DEBUG)
+		UnsignedInt sgFrame = TheGameLogic->getFrame();
+		if ((sgFrame % 150) == 0) {
+			const StratagemDirective     &d = m_stratagem->directive();
+			const StratagemWorldSignals  &s = m_stratagem->signals();
+			const StratagemDecisionTrace &t = m_stratagem->trace();   // L2 diagnostics
+			DEBUG_LOG(("STRATAGEM EXEC [%s] f=%u %s commit=%d conf=%.2f | own=%.2f threat=%.2f ready=%.2f econ=%.2f prog=%.2f | pressure=%.2f floor=%.2f trig=%c%c%c | votes exp=%.2f tech=%.2f mass=%.2f def=%.2f har=%.2f all=%.2f | teamCadence=%.2fx",
+				m_stratagem->name().str(), sgFrame, StratagemPostureName(d.posture),
+				d.commitAttack ? 1 : 0, d.confidence,
+				s.ownControl, s.threatAtBase, s.armyReadiness, s.economyLead, s.gameProgress,
+				t.pressure, t.commitFloor,
+				t.trigEager ? 'E' : '-', t.trigPressure ? 'P' : '-', t.trigBackstop ? 'B' : '-',
+				t.votes[POSTURE_EXPAND], t.votes[POSTURE_TECH], t.votes[POSTURE_MASS],
+				t.votes[POSTURE_DEFEND], t.votes[POSTURE_HARASS], t.votes[POSTURE_ALLIN],
+				m_stratagem->teamCadenceScale()));
+		}
+#endif
+	}
 
 	doBaseBuilding();		// See if it's time to build another building.
 
