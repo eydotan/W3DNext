@@ -51,3 +51,5 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Renderer work is reviewed against the 
 ## Maintenance level
 
 This is a working reference implementation, maintained casually by one person. Issues are triaged weekly, but may sit; pull requests are reviewed when time permits. Forks and downstream use are encouraged — that's what the GPL is for. If the project grows, co-maintainers are welcome.
+
+Questions, design discussion, and bug reports all belong here on GitHub — issues for anything actionable, [discussions](../../discussions) for the open-ended kind. That's where I'm most reliably reachable.
