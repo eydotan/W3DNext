@@ -31,6 +31,34 @@
 
 #include "D3D11FVF.h"
 #include "RenderBackend.h"   // W3DNext_GetEnv (diagnostic env knobs)
+
+// W3DNext_GetEnv's real definition lives in the ww3d2-only RenderBackend.cpp,
+// which the standalone w3d_d3d11_smoke target deliberately does not link (see
+// Core/Tests/d3d11_smoke/CMakeLists.txt - it pulls in no WWVegas static lib).
+// Same split as the W3D-typed virtuals below: the game build defines
+// W3DNEXT_D3D11_W3D_TU and takes the real one; the smoke build compiles this
+// copy so the diagnostic knobs keep working there instead of failing to link.
+#ifndef W3DNEXT_D3D11_W3D_TU
+const char * W3DNext_GetEnv(const char * suffix)
+{
+	if (suffix == nullptr) {
+		return nullptr;
+	}
+
+	char name[128];
+
+	// Preferred, project-named form.
+	std::snprintf(name, sizeof(name), "W3DNEXT_%s", suffix);
+	const char * value = std::getenv(name);
+	if (value != nullptr) {
+		return value;
+	}
+
+	// Legacy zpower-tree form, kept so existing harness scripts keep working.
+	std::snprintf(name, sizeof(name), "ZP_%s", suffix);
+	return std::getenv(name);
+}
+#endif // W3DNEXT_D3D11_W3D_TU
 #include "Shaders/D3D11FFShaders.h"
 
 #include "vector3.h"
