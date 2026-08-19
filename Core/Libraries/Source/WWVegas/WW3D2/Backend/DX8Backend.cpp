@@ -90,11 +90,6 @@ WW3DFormat DX8Backend::Get_Back_Buffer_Format()
 	return DX8Wrapper::getBackBufferFormat();
 }
 
-SurfaceClass * DX8Backend::Get_Back_Buffer(unsigned int num)
-{
-	return DX8Wrapper::_Get_DX8_Back_Buffer(num);
-}
-
 void DX8Backend::Set_Gamma(float gamma, float bright, float contrast, bool calibrate, bool uselimit)
 {
 	DX8Wrapper::Set_Gamma(gamma, bright, contrast, calibrate, uselimit);
@@ -142,14 +137,14 @@ void DX8Backend::Set_Vertex_Buffer(const DynamicVBAccessClass & vba)
 	DX8Wrapper::Set_Vertex_Buffer(vba);
 }
 
-void DX8Backend::Set_Index_Buffer(const IndexBufferClass * ib, unsigned short index_base_offset)
+void DX8Backend::Set_Index_Buffer(const IndexBufferClass * ib, unsigned int index_base_offset)
 {
-	DX8Wrapper::Set_Index_Buffer(ib, index_base_offset);
+	DX8Wrapper::Set_Index_Buffer(ib, static_cast<unsigned short>(index_base_offset));
 }
 
-void DX8Backend::Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned short index_base_offset)
+void DX8Backend::Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned int index_base_offset)
 {
-	DX8Wrapper::Set_Index_Buffer(iba, index_base_offset);
+	DX8Wrapper::Set_Index_Buffer(iba, static_cast<unsigned short>(index_base_offset));
 }
 
 void DX8Backend::Set_Index_Buffer_Index_Offset(unsigned int offset)
@@ -326,12 +321,12 @@ void DX8Backend::Draw_Strip(
 		static_cast<unsigned short>(vertex_count));
 }
 
-void DX8Backend::Set_Vertex_Shader(unsigned long vertex_shader)
+void DX8Backend::Set_Vertex_Shader(unsigned int vertex_shader)
 {
 	DX8Wrapper::Set_Vertex_Shader(static_cast<DWORD>(vertex_shader));
 }
 
-void DX8Backend::Set_Pixel_Shader(unsigned long pixel_shader)
+void DX8Backend::Set_Pixel_Shader(unsigned int pixel_shader)
 {
 	DX8Wrapper::Set_Pixel_Shader(static_cast<DWORD>(pixel_shader));
 }

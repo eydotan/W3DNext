@@ -2189,12 +2189,6 @@ WW3DFormat D3D11Backend::Get_Back_Buffer_Format()
 //
 // ----------------------------------------------------------------------------
 
-SurfaceClass * D3D11Backend::Get_Back_Buffer(unsigned int num)
-{
-	D3D11_STUB();
-	return nullptr;
-}
-
 void D3D11Backend::Set_Gamma(float gamma, float bright, float contrast, bool calibrate, bool uselimit)
 {
 	D3D11_STUB();
@@ -2220,14 +2214,14 @@ void D3D11Backend::Set_Vertex_Buffer(const DynamicVBAccessClass & vba)
 	D3D11_STUB();
 }
 
-void D3D11Backend::Set_Index_Buffer(const IndexBufferClass * ib, unsigned short index_base_offset)
+void D3D11Backend::Set_Index_Buffer(const IndexBufferClass * ib, unsigned int index_base_offset)
 {
 	D3D11_TRACE_PARTIAL();
 	m_boundIndexBuffer = ib;
 	m_indexBaseOffset = index_base_offset;
 }
 
-void D3D11Backend::Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned short index_base_offset)
+void D3D11Backend::Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned int index_base_offset)
 {
 	D3D11_TRACE_PARTIAL();
 	m_indexBaseOffset = index_base_offset;
@@ -2676,12 +2670,12 @@ void D3D11Backend::Draw_Strip(
 	m_context->DrawIndexed(primitive_count + 2, start_index, static_cast<INT>(m_indexBaseOffset));
 }
 
-void D3D11Backend::Set_Vertex_Shader(unsigned long vertex_shader)
+void D3D11Backend::Set_Vertex_Shader(unsigned int vertex_shader)
 {
 	D3D11_STUB();
 }
 
-void D3D11Backend::Set_Pixel_Shader(unsigned long pixel_shader)
+void D3D11Backend::Set_Pixel_Shader(unsigned int pixel_shader)
 {
 	D3D11_STUB();
 }

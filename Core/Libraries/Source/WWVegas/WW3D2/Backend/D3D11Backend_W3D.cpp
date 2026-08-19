@@ -510,7 +510,7 @@ void D3D11Backend::Set_Vertex_Buffer(const DynamicVBAccessClass & vba)
 	DX8Wrapper::Set_Vertex_Buffer(vba);
 }
 
-void D3D11Backend::Set_Index_Buffer(const IndexBufferClass * ib, unsigned short index_base_offset)
+void D3D11Backend::Set_Index_Buffer(const IndexBufferClass * ib, unsigned int index_base_offset)
 {
 	m_boundIndexBuffer = ib;
 	m_indexBaseOffset = index_base_offset;
@@ -526,10 +526,10 @@ void D3D11Backend::Set_Index_Buffer(const IndexBufferClass * ib, unsigned short 
 		}
 	}
 	// Mirror into the engine-side render_state record (see Set_Vertex_Buffer).
-	DX8Wrapper::Set_Index_Buffer(ib, index_base_offset);
+	DX8Wrapper::Set_Index_Buffer(ib, static_cast<unsigned short>(index_base_offset));
 }
 
-void D3D11Backend::Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned short index_base_offset)
+void D3D11Backend::Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned int index_base_offset)
 {
 	// The uploaded slice is 0-based within itself, so the DrawIndexed base-vertex
 	// is 0 for the dynamic path (the DX8 SetIndices base only applies to shared
@@ -548,7 +548,7 @@ void D3D11Backend::Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned s
 	// Mirror into the engine-side render_state record; the ENGINE-side
 	// index_base_offset is passed through unchanged (Flush uses it as a CPU-side
 	// vertex offset), only the GPU DrawIndexed base above stays 0.
-	DX8Wrapper::Set_Index_Buffer(iba, index_base_offset);
+	DX8Wrapper::Set_Index_Buffer(iba, static_cast<unsigned short>(index_base_offset));
 }
 
 // Real body here (not D3D11Backend.cpp) because the render_state mirror needs

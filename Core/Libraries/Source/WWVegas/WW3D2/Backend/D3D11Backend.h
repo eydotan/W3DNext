@@ -360,7 +360,6 @@ public:
 	virtual bool Is_Device_Lost() const override;
 	virtual bool Has_Stencil() override;
 	virtual WW3DFormat Get_Back_Buffer_Format() override;
-	virtual SurfaceClass * Get_Back_Buffer(unsigned int num) override;
 	virtual void Set_Gamma(float gamma, float bright, float contrast, bool calibrate, bool uselimit) override;
 
 	virtual void Begin_Scene() override;
@@ -392,8 +391,8 @@ public:
 
 	virtual void Set_Vertex_Buffer(const VertexBufferClass * vb, unsigned int stream) override;
 	virtual void Set_Vertex_Buffer(const DynamicVBAccessClass & vba) override;
-	virtual void Set_Index_Buffer(const IndexBufferClass * ib, unsigned short index_base_offset) override;
-	virtual void Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned short index_base_offset) override;
+	virtual void Set_Index_Buffer(const IndexBufferClass * ib, unsigned int index_base_offset) override;
+	virtual void Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned int index_base_offset) override;
 	virtual void Set_Index_Buffer_Index_Offset(unsigned int offset) override;
 
 	// Write-time capture of DX8 dynamic-buffer contents (see IRenderBackend). These
@@ -450,9 +449,8 @@ public:
 		unsigned int min_vertex_index,
 		unsigned int vertex_count) override;
 
-	// The shader id is treated as an opaque unsigned long.
-	virtual void Set_Vertex_Shader(unsigned long vertex_shader) override;
-	virtual void Set_Pixel_Shader(unsigned long pixel_shader) override;
+	virtual void Set_Vertex_Shader(unsigned int vertex_shader) override;
+	virtual void Set_Pixel_Shader(unsigned int pixel_shader) override;
 	virtual void Set_Vertex_Shader_Constant(int reg, const void * data, int count) override;
 	virtual void Set_Pixel_Shader_Constant(int reg, const void * data, int count) override;
 

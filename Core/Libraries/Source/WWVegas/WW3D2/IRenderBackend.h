@@ -161,7 +161,6 @@ public:
 	virtual bool Is_Device_Lost() const = 0;
 	virtual bool Has_Stencil() = 0;
 	virtual WW3DFormat Get_Back_Buffer_Format() = 0;
-	virtual SurfaceClass * Get_Back_Buffer(unsigned int num) = 0;
 	virtual void Set_Gamma(float gamma, float bright, float contrast, bool calibrate = true, bool uselimit = true) = 0;
 
 	virtual void Begin_Scene() = 0;
@@ -172,8 +171,8 @@ public:
 
 	virtual void Set_Vertex_Buffer(const VertexBufferClass * vb, unsigned int stream = 0) = 0;
 	virtual void Set_Vertex_Buffer(const DynamicVBAccessClass & vba) = 0;
-	virtual void Set_Index_Buffer(const IndexBufferClass * ib, unsigned short index_base_offset) = 0;
-	virtual void Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned short index_base_offset) = 0;
+	virtual void Set_Index_Buffer(const IndexBufferClass * ib, unsigned int index_base_offset) = 0;
+	virtual void Set_Index_Buffer(const DynamicIBAccessClass & iba, unsigned int index_base_offset) = 0;
 	virtual void Set_Index_Buffer_Index_Offset(unsigned int offset) = 0;
 
 	// Write-time capture of dynamic-buffer contents (RENDERER_PORT.md step 10). The
@@ -245,9 +244,10 @@ public:
 		unsigned int min_vertex_index,
 		unsigned int vertex_count) = 0;
 
-	// The shader id is treated as an opaque unsigned long.
-	virtual void Set_Vertex_Shader(unsigned long vertex_shader) = 0;
-	virtual void Set_Pixel_Shader(unsigned long pixel_shader) = 0;
+	// Legacy fixed function vertex format code or shader handle. Always 32 bits
+	// wide; unsigned long would be 64 bits on targets where long is 64-bit.
+	virtual void Set_Vertex_Shader(unsigned int vertex_shader) = 0;
+	virtual void Set_Pixel_Shader(unsigned int pixel_shader) = 0;
 	virtual void Set_Vertex_Shader_Constant(int reg, const void * data, int count) = 0;
 	virtual void Set_Pixel_Shader_Constant(int reg, const void * data, int count) = 0;
 
