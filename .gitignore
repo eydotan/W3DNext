@@ -83,3 +83,4 @@ d3d11_backend.log
 
 # post-clear capsule (session-local, never committed)
 .pcp.md
+.bye.md
