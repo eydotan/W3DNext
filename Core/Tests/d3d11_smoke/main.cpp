@@ -710,6 +710,9 @@ int main()
 	const void * blendPtrOpaque = nullptr; // ID3D11BlendState for the opaque vector
 	const void * blendPtrAlpha  = nullptr; // ...for the alpha-blend vector (1st request)
 	const void * blendPtrAlpha2 = nullptr; // ...for the alpha-blend vector (2nd request)
+	const void * blendPtrAlphaMask = nullptr; // ...for write-masked vector (R1)
+	const void * blendPtrAlphaMask2 = nullptr;
+	const void * blendPtrRestored = nullptr;
 
 	// (1a) Opaque state (blend off ONE/ZERO, depth test+write on LESSEQUAL, cull
 	// none, solid) -> draw a WIDE opaque RED base. Region x[20..140] y[210..270];
@@ -799,19 +802,54 @@ int main()
 		}
 		backend.Draw_Triangles(0, 2, 0, 4);
 	}
-
-	// (3) CACHE IDENTITY. Re-request the SAME alpha-blend vector; the cache must
-	// hand back the SAME ID3D11BlendState pointer it returned in (1b), proving no
-	// per-request CreateBlendState. (No draw needed - just the re-bind.)
-	backend.Set_Blend_Enable(true);
-	backend.Set_Blend_Func(RB_BLEND_SRCALPHA, RB_BLEND_INVSRCALPHA);
-	backend.Set_Depth_Write_Enable(false);
-	backend.Apply_Render_State_Changes();
-	blendPtrAlpha2 = backend.Get_Bound_Blend_State();
-	// Snapshot the distinct-object counts NOW, before Shutdown releases the cache.
-	// Two distinct blend vectors (opaque, alpha) were requested (the 2nd alpha
-	// request was a cache hit), so exactly 2 blend objects should be cached.
-	const unsigned int blendObjsCached = backend.Get_Blend_State_Count();
+ 
+ 	// (2b) COLOR WRITE MASK (R1 fix). Draw an opaque pure-green quad with
+ 	// Set_Color_Write_Mask(0x08) (ALPHA ONLY, D3DCOLORWRITEENABLE_ALPHA).
+ 	// RGB writes are disabled at the OM blend stage, so the clear magenta RGB (255,0,255)
+ 	// is untouched, while the quad's alpha (128) is written into the framebuffer.
+ 	// If color masking is broken (D3D11_COLOR_WRITE_ENABLE_ALL hardcoded), green overwrites
+ 	// RGB and check U goes RED. Region x[20..80] y[10..50].
+ 	backend.Set_Blend_Enable(false);
+ 	backend.Set_Blend_Func(RB_BLEND_ONE, RB_BLEND_ZERO);
+ 	backend.Set_Depth_Test_Enable(false);
+ 	backend.Set_Color_Write_Mask(0x08); // ALPHA only
+ 	backend.Apply_Render_State_Changes();
+ 	blendPtrAlphaMask = backend.Get_Bound_Blend_State();
+ 	{
+ 		const unsigned int kMaskGreen = 0x8000FF00u; // A=128, R=0, G=255, B=0
+ 		const LitVertex cmask_quad[4] = {
+ 			{ 20.0f, 10.0f, 0.0f, 0.0f, 0.0f, 1.0f, kMaskGreen },
+ 			{ 80.0f, 10.0f, 0.0f, 0.0f, 0.0f, 1.0f, kMaskGreen },
+ 			{ 80.0f, 50.0f, 0.0f, 0.0f, 0.0f, 1.0f, kMaskGreen },
+ 			{ 20.0f, 50.0f, 0.0f, 0.0f, 0.0f, 1.0f, kMaskGreen },
+ 		};
+ 		if (!backend.Upload_Vertices(cmask_quad, sizeof(cmask_quad), kFVF_XYZ_NORMAL_DIFFUSE) ||
+ 			!backend.Upload_Indices16(quad_indices, 6)) {
+ 			std::printf("SMOKE FAIL: color mask quad upload failed\n");
+ 			return 1;
+ 		}
+ 		backend.Draw_Triangles(0, 2, 0, 4);
+ 	}
+ 	backend.Apply_Render_State_Changes();
+ 	blendPtrAlphaMask2 = backend.Get_Bound_Blend_State();
+ 
+ 	// Restore default write mask and depth test
+ 	backend.Set_Color_Write_Mask(0x0F);
+ 	backend.Set_Depth_Test_Enable(true);
+ 	backend.Apply_Render_State_Changes();
+ 	blendPtrRestored = backend.Get_Bound_Blend_State();
+ 
+ 	// (3) CACHE IDENTITY. Re-request the SAME alpha-blend vector; the cache must
+ 	// hand back the SAME ID3D11BlendState pointer it returned in (1b), proving no
+ 	// per-request CreateBlendState. (No draw needed - just the re-bind.)
+ 	backend.Set_Blend_Enable(true);
+ 	backend.Set_Blend_Func(RB_BLEND_SRCALPHA, RB_BLEND_INVSRCALPHA);
+ 	backend.Set_Depth_Write_Enable(false);
+ 	backend.Apply_Render_State_Changes();
+ 	blendPtrAlpha2 = backend.Get_Bound_Blend_State();
+ 	// Snapshot the distinct-object counts NOW, before Shutdown releases the cache.
+ 	// 3 distinct blend vectors (opaque 0x0F, alpha 0x0F, opaque 0x08)
+ 	const unsigned int blendObjsCached = backend.Get_Blend_State_Count();
 	const unsigned int depthObjsCached = backend.Get_Depth_State_Count();
 	const unsigned int rasterObjsCached = backend.Get_Rasterizer_State_Count();
 
@@ -1355,21 +1393,24 @@ int main()
 
 	// New check O (step 9): CACHE IDENTITY. Requesting the same alpha-blend vector
 	// twice returns the SAME ID3D11BlendState pointer (one cached object, no
-	// per-request create); the distinct opaque vector returns a DIFFERENT object.
-	if (blendPtrAlpha == nullptr || blendPtrOpaque == nullptr ||
-		blendPtrAlpha2 != blendPtrAlpha || blendPtrAlpha == blendPtrOpaque) {
+	// per-request create); the distinct opaque vector returns a DIFFERENT object;
+	// and the write-masked vector (R1) returns a 3rd distinct object.
+	if (blendPtrAlpha == nullptr || blendPtrOpaque == nullptr || blendPtrAlphaMask == nullptr ||
+		blendPtrAlpha2 != blendPtrAlpha || blendPtrAlpha == blendPtrOpaque ||
+		blendPtrAlphaMask == blendPtrOpaque || blendPtrAlphaMask == blendPtrAlpha ||
+		blendPtrAlphaMask2 != blendPtrAlphaMask || blendPtrRestored != blendPtrOpaque) {
 		std::printf(
-			"SMOKE FAIL: state cache identity: opaque=%p alpha=%p alpha2=%p (want alpha==alpha2, alpha!=opaque, none null)\n",
-			blendPtrOpaque, blendPtrAlpha, blendPtrAlpha2);
+			"SMOKE FAIL: state cache identity: opaque=%p alpha=%p alpha2=%p alphaMask=%p (want alpha==alpha2, restored==opaque, alphaMask distinct)\n",
+			blendPtrOpaque, blendPtrAlpha, blendPtrAlpha2, blendPtrAlphaMask);
 		failed = 1;
-	} else if (blendObjsCached != 2) {
+	} else if (blendObjsCached != 3) {
 		std::printf(
-			"SMOKE FAIL: state cache growth: expected 2 distinct blend objects (opaque + alpha), got %u\n",
+			"SMOKE FAIL: state cache growth: expected 3 distinct blend objects (opaque, alpha, alphaMask), got %u\n",
 			blendObjsCached);
 		failed = 1;
 	} else {
-		std::printf("stateCache identity: alpha==alpha2 (%p reused), alpha!=opaque (%p) - OK; cached blend=%u depth=%u raster=%u\n",
-			blendPtrAlpha, blendPtrOpaque, blendObjsCached, depthObjsCached, rasterObjsCached);
+		std::printf("stateCache identity: alpha==alpha2 (%p reused), alphaMask==alphaMask2 (%p reused), restored==opaque - OK; cached blend=%u depth=%u raster=%u\n",
+			blendPtrAlpha, blendPtrAlphaMask, blendObjsCached, depthObjsCached, rasterObjsCached);
 	}
 
 	// New check P (screen filters): the monochrome filter quad grayed quad B's
@@ -1456,6 +1497,23 @@ int main()
 	} else {
 		std::printf("gsOff(%d,%d) RGBA(%u,%u,%u,%u) == pure red, override cleared - OK\n",
 			gn_x, gn_y, gn_r, gn_g, gn_b, gn_a);
+	}
+
+	// New check U (R1: color write mask):
+	// Quad drawn under alpha-only write mask (0x08) left clear magenta RGB (255,0,255) intact,
+	// while writing alpha=128. If color masking was ignored (D3D11_COLOR_WRITE_ENABLE_ALL),
+	// the quad's green diffuse would overwrite RGB.
+	const int mask_x = 50, mask_y = 30;
+	unsigned char mask_r, mask_g, mask_b, mask_a;
+	Read_Pixel(mapped, mask_x, mask_y, mask_r, mask_g, mask_b, mask_a);
+	if (mask_r != 255 || mask_g != 0 || mask_b != 255 || mask_a != 128) {
+		std::printf(
+			"SMOKE FAIL: colorWriteMask(%d,%d) got RGBA(%u,%u,%u,%u), expected RGB-masked magenta RGBA(255,0,255,128)\n",
+			mask_x, mask_y, mask_r, mask_g, mask_b, mask_a);
+		failed = 1;
+	} else {
+		std::printf("colorWriteMask(%d,%d) RGBA(%u,%u,%u,%u) == alpha-written RGB-masked magenta - OK\n",
+			mask_x, mask_y, mask_r, mask_g, mask_b, mask_a);
 	}
 
 	if (failed) {

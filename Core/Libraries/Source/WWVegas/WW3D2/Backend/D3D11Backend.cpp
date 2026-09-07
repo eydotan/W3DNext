@@ -2387,6 +2387,15 @@ void D3D11Backend::Set_Fill_Mode(RenderBackendFillMode mode)
 	}
 }
 
+void D3D11Backend::Set_Color_Write_Mask(unsigned char mask)
+{
+	const unsigned char m = mask & 0x0F;
+	if (m_renderState.colorWriteMask != m) {
+		m_renderState.colorWriteMask = m;
+		m_renderStateDirty = true;
+	}
+}
+
 const void * D3D11Backend::Get_Bound_Blend_State() const { return m_activeBlendState; }
 const void * D3D11Backend::Get_Bound_Depth_State() const { return m_activeDepthState; }
 const void * D3D11Backend::Get_Bound_Rasterizer_State() const { return m_activeRasterizerState; }

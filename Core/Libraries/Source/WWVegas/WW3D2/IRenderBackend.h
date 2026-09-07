@@ -203,6 +203,7 @@ public:
 	virtual void Apply_Render_State_Changes() = 0;
 	virtual void Apply_Default_State() = 0;
 	virtual void Invalidate_Cached_Render_States() = 0;
+	virtual void Set_Color_Write_Mask(unsigned char mask) {}
 
 	virtual void Set_Transform(TransformKind transform, const Matrix4x4 & m) = 0;
 	virtual void Set_Transform(TransformKind transform, const Matrix3D & m) = 0;

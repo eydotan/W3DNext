@@ -120,6 +120,7 @@ RenderStateVector::RenderStateVector()
 	, srcBlend(RB_BLEND_ONE)
 	, dstBlend(RB_BLEND_ZERO)
 	, blendOp(RB_BLENDOP_ADD)
+	, colorWriteMask(0x0F) // D3D11_COLOR_WRITE_ENABLE_ALL
 	, depthEnable(true)
 	, depthWrite(true)
 	, depthFunc(RB_CMP_LESSEQUAL)
@@ -135,17 +136,18 @@ RenderStateVector::RenderStateVector()
 
 unsigned int RenderStateVector::Blend_Key() const
 {
-	// blendEnable:1 | srcBlend:4 | dstBlend:4 | blendOp:3 (well under 32 bits).
+	// blendEnable:1 | colorWriteMask:4 | srcBlend:4 | dstBlend:4 | blendOp:3 (16 bits).
 	// When blending is OFF the src/dst/op fields are irrelevant to the created
-	// object, so they are masked out - every "blend off" vector collapses onto a
-	// single cached passthrough object regardless of its stale factor fields.
+	// object, so they are masked out - but colorWriteMask still applies, so a blend-off
+	// write-masked draw (e.g. shoreline dest-alpha pass) gets its own distinct state object.
+	unsigned int mask = static_cast<unsigned int>(colorWriteMask) & 0xFu;
 	if (!blendEnable) {
-		return 0u;
+		return mask << 1;
 	}
-	unsigned int k = 1u;
-	k |= (static_cast<unsigned int>(srcBlend) & 0xF) << 1;
-	k |= (static_cast<unsigned int>(dstBlend) & 0xF) << 5;
-	k |= (static_cast<unsigned int>(blendOp)  & 0x7) << 9;
+	unsigned int k = 1u | (mask << 1);
+	k |= (static_cast<unsigned int>(srcBlend) & 0xF) << 5;
+	k |= (static_cast<unsigned int>(dstBlend) & 0xF) << 9;
+	k |= (static_cast<unsigned int>(blendOp)  & 0x7) << 13;
 	return k;
 }
 
@@ -193,7 +195,7 @@ ID3D11BlendState * D3D11StateCache::Get_Blend_State(ID3D11Device * device, const
 	rt.SrcBlendAlpha = To_D3D11_Blend_Alpha(rs.srcBlend);
 	rt.DestBlendAlpha = To_D3D11_Blend_Alpha(rs.dstBlend);
 	rt.BlendOpAlpha = To_D3D11_Blend_Op(rs.blendOp);
-	rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+	rt.RenderTargetWriteMask = static_cast<UINT8>(rs.colorWriteMask & 0x0F);
 
 	ID3D11BlendState * state = nullptr;
 	if (FAILED(device->CreateBlendState(&desc, &state))) {

@@ -118,6 +118,7 @@ struct RenderStateVector
 	RenderBackendBlendFactor srcBlend;// D3DRS_SRCBLEND
 	RenderBackendBlendFactor dstBlend;// D3DRS_DESTBLEND
 	RenderBackendBlendOp blendOp;     // D3DRS_BLENDOP
+	unsigned char colorWriteMask;     // D3DRS_COLORWRITEENABLE (bitmask: R:1 G:2 B:4 A:8; 0x0F=ALL)
 
 	// Depth-stencil (OMSetDepthStencilState).
 	bool depthEnable;                 // D3DRS_ZENABLE

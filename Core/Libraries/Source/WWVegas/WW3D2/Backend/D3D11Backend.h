@@ -339,6 +339,8 @@ public:
 	void Set_Depth_Func(RenderBackendCmpFunc func);
 	void Set_Cull_Mode(RenderBackendCullMode mode);
 	void Set_Fill_Mode(RenderBackendFillMode mode);
+	virtual void Set_Color_Write_Mask(unsigned char mask) override;
+	unsigned char Get_Color_Write_Mask() const { return m_renderState.colorWriteMask; }
 
 	// Currently-bound state objects (as opaque void*, so the header stays light).
 	// The smoke oracle uses these to prove cache identity: requesting the same

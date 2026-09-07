@@ -57,6 +57,7 @@
 #include "dx8vertexbuffer.h"
 #include "dx8indexbuffer.h"
 #include "vertmaterial.h"
+#include "Backend/RenderBackend.h"
 
 /*
 ** Registry value names
@@ -938,6 +939,9 @@ WWINLINE void DX8Wrapper::Set_DX8_Render_State(D3DRENDERSTATETYPE state, unsigne
 	RenderStates[state]=value;
 	DX8CALL(SetRenderState( state, value ));
 	DX8_RECORD_RENDER_STATE_CHANGE();
+	if (state == D3DRS_COLORWRITEENABLE && g_renderBackend != nullptr) {
+		g_renderBackend->Set_Color_Write_Mask(static_cast<unsigned char>(value & 0x0F));
+	}
 }
 
 WWINLINE void DX8Wrapper::Set_DX8_Clip_Plane(DWORD Index, CONST float* pPlane)
