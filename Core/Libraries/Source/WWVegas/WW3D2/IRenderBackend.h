@@ -164,7 +164,7 @@ public:
 	virtual void Set_Gamma(float gamma, float bright, float contrast, bool calibrate = true, bool uselimit = true) = 0;
 
 	virtual void Begin_Scene() = 0;
-	virtual void End_Scene(bool flip_frame) = 0;
+	virtual void End_Scene(bool flip_frame = true) = 0;
 	virtual void Flip_To_Primary() = 0;
 	virtual void Clear(bool clear_color, bool clear_z_stencil, const Vector3 & color, float dest_alpha = 0.0f, float z = 1.0f, unsigned int stencil = 0) = 0;
 	virtual void Set_Viewport(const RenderBackendViewport & viewport) = 0;
