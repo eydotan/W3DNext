@@ -21,10 +21,17 @@
 
 #include "RenderBackend.h"
 #include "DX8Backend.h"
+#if W3DNEXT_HAS_D3D11
 #include "D3D11Backend.h"
+#endif
 
-#include <cstdio>
-#include <cstdlib>
+// <Utility/stdio_adapter.h> rather than <cstdio>: VC6 puts none of the C library
+// in namespace std, and its STLport <cstdio> collides with the adapter's own
+// vsnprintf shim. The adapter is the tree-wide answer to both, so the calls below
+// are unqualified. (The D3D11 twin of this helper in D3D11Backend.cpp keeps
+// std:: - that translation unit never reaches the VC6 toolchain.)
+#include <Utility/stdio_adapter.h>
+#include <stdlib.h>
 #include <windows.h>
 
 IRenderBackend * g_renderBackend = nullptr;
@@ -48,15 +55,15 @@ const char * W3DNext_GetEnv(const char * suffix)
 	char name[128];
 
 	// Preferred, project-named form.
-	std::snprintf(name, sizeof(name), "W3DNEXT_%s", suffix);
-	const char * value = std::getenv(name);
+	snprintf(name, sizeof(name), "W3DNEXT_%s", suffix);
+	const char * value = getenv(name);
 	if (value != nullptr) {
 		return value;
 	}
 
 	// Legacy zpower-tree form, kept so existing harness scripts keep working.
-	std::snprintf(name, sizeof(name), "ZP_%s", suffix);
-	return std::getenv(name);
+	snprintf(name, sizeof(name), "ZP_%s", suffix);
+	return getenv(name);
 }
 
 namespace
@@ -68,11 +75,11 @@ namespace
 void RB_Log_Line(const char * line)
 {
 	const char * path = W3DNext_GetEnv("D3D11_LOG");
-	FILE * f = std::fopen(path != nullptr ? path : "d3d11_backend.log", "a");
+	FILE * f = fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 	if (f != nullptr) {
-		std::fputs(line, f);
-		std::fputc('\n', f);
-		std::fclose(f);
+		fputs(line, f);
+		fputc('\n', f);
+		fclose(f);
 	}
 	OutputDebugStringA(line);
 	OutputDebugStringA("\n");
@@ -90,13 +97,25 @@ void Init_Render_Backend()
 		return;
 	}
 
+#if W3DNEXT_HAS_D3D11
 	if (s_useD3D11Backend) {
 		g_renderBackend = new D3D11Backend();
 		RB_Log_Line("[RenderBackend] constructed D3D11Backend (-gfxBackend d3d11)");
-	} else {
-		g_renderBackend = new DX8Backend();
-		RB_Log_Line("[RenderBackend] constructed DX8Backend (default path)");
+		return;
 	}
+#else
+	// The vc6 presets compile no D3D11 backend at all (no <unordered_map>, no
+	// D3D11 SDK), so -gfxBackend d3d11 cannot be honoured there. Clear the flag
+	// so Is_D3D11_Backend_Active stays honest, say so in the log, and draw with
+	// DX8 rather than leaving g_renderBackend null.
+	if (s_useD3D11Backend) {
+		s_useD3D11Backend = false;
+		RB_Log_Line("[RenderBackend] D3D11 backend not built in this configuration - using DX8Backend");
+	}
+#endif
+
+	g_renderBackend = new DX8Backend();
+	RB_Log_Line("[RenderBackend] constructed DX8Backend (default path)");
 }
 
 void Shutdown_Render_Backend()
@@ -111,3 +130,43 @@ void Shutdown_Render_Backend()
 	delete g_renderBackend;
 	g_renderBackend = nullptr;
 }
+
+#if !W3DNEXT_HAS_D3D11
+// ----------------------------------------------------------------------------
+// No-op bodies for the D3D11 mirror hooks, for configurations that compile no
+// D3D11 backend at all (today: the vc6 presets).
+//
+// The hooks are declared in dx8wrapper.h and called from its inline funnels, so
+// every translation unit that touches DX8Wrapper emits a reference to them -
+// while their real bodies live in Backend/D3D11Backend_W3D.cpp, which is not
+// built here. Without these, the game link fails with a wall of LNK2001 from
+// shader.cpp, mapper.cpp, render2d.cpp and friends.
+//
+// Defined here rather than guarding the call sites in the header on purpose: a
+// header guard would depend on every consumer of dx8wrapper.h seeing the same
+// define, and a consumer that missed it would silently skip the mirroring on a
+// real D3D11 build - a behavior bug that looks exactly like correct code. These
+// bodies match what the real hooks do while DX8 is drawing, which is nothing.
+// ----------------------------------------------------------------------------
+
+#include <d3d8.h>
+
+void RB_Mirror_Texgen_Stage_State(unsigned, unsigned, unsigned) {}
+void RB_Mirror_Texture_Transform(unsigned, const D3DMATRIX &) {}
+void RB_Mirror_Grayscale2D(bool) {}
+void RB_Mirror_Terrain_FF_Pass(int, int) {}
+void RB_Mirror_Road_FF_Pass(int) {}
+void RB_Mirror_Tree_Sway(bool, const float *, unsigned int) {}
+void RB_Mirror_World_View_Transform(unsigned, const D3DMATRIX &) {}
+
+// false = "the backend supplied nothing, read the device as before", which is
+// exactly the answer when there is no D3D11 backend.
+bool RB_Get_Backend_Transform(D3DTRANSFORMSTATETYPE, D3DMATRIX &) { return false; }
+
+// Same story for the two texture-side hooks in dx8wrapper.h: the copy-shadow
+// mirror (called from DX8Wrapper::_Copy_DX8_Rects) and the cache eviction
+// (called from ~TextureBaseClass, texture.cpp).
+void D3D11_Mirror_Copy_Rects(IDirect3DSurface8 *, CONST RECT *, UINT,
+	IDirect3DSurface8 *, CONST POINT *) {}
+void D3D11_Evict_Cached_Texture(unsigned) {}
+#endif

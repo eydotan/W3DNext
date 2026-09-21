@@ -240,7 +240,11 @@ set(WW3D2_SRC
 
 # D3D11Backend (RENDERER_PORT step 3) talks to the D3D11 runtime directly and
 # is Windows-only; the DX8 reference backend remains the constructed default.
-if(WIN32)
+# VC6 is excluded: the 1998 toolchain has no <unordered_map> (D3D11States.h) and
+# no D3D11 SDK at all, so the vc6 presets build the DX8 backend only. Everything
+# in Core that asks "is D3D11 drawing?" keeps compiling there - the selection API
+# in RenderBackend.cpp stays, guarded by W3DNEXT_HAS_D3D11 and answering false.
+if(WIN32 AND NOT IS_VS6_BUILD)
     list(APPEND WW3D2_SRC
         Backend/D3D11Backend.cpp
         Backend/D3D11Backend.h
@@ -275,13 +279,18 @@ target_link_libraries(corei_ww3d2 INTERFACE
 
 # D3D11Backend (RENDERER_PORT step 3) needs the D3D11 runtime. Scoped here
 # because the backend source is part of WW3D2_SRC and compiles into every
-# consumer of this interface library.
-if(WIN32)
+# consumer of this interface library. Excluded on vc6 for the same reason the
+# sources are (above): that toolchain has no D3D11 SDK, and linking d3d11.lib
+# there fails the game link outright with LNK1181.
+if(WIN32 AND NOT IS_VS6_BUILD)
     target_link_libraries(corei_ww3d2 INTERFACE
         d3d11
         dxgi
         d3dcompiler
     )
+    # Tells RenderBackend.cpp - the one backend TU vc6 still compiles - whether
+    # the D3D11 backend exists to be constructed at all.
+    target_compile_definitions(corei_ww3d2 INTERFACE W3DNEXT_HAS_D3D11=1)
     # Tell D3D11Backend.cpp that its ww3d2-only companion (D3D11Backend_W3D.cpp,
     # above) supplies the real W3D-typed method bodies, so its placeholder stubs
     # for those methods compile out - leaving exactly one definition per method in

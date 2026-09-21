@@ -209,7 +209,12 @@ void StratagemProfileSelfTest()
 	StratagemTraits trial;  trial.zero();
 	trial.riskTolerance = 0.5f;
 
-	StratagemTraits layers[2] = { delta, trial };
+	// Element-wise, not a brace initializer: VC6 cannot aggregate-initialize
+	// an array of class type from non-constant expressions - it tries to
+	// convert each element to the first member's type (error C2440).
+	StratagemTraits layers[2];
+	layers[0] = delta;
+	layers[1] = trial;
 	StratagemProfile resolved = StratagemResolveProfile( base, layers, 2 );
 
 	DEBUG_LOG(("STRATAGEM E1 self-test: baseHash=%08x resolvedHash=%08x | aggression=%.2f harass=%.2f econ=%.2f risk=%.2f difficulty=%d",
