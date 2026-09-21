@@ -77,10 +77,14 @@ StratagemDirective StratagemPlanner::decideVerbose( const StratagemWorldSignals 
 	score[POSTURE_HARASS] = k.wHarass * (0.4f + 0.6f * w.ownControl);
 	score[POSTURE_ALLIN]  = k.wAllIn  * w.armyReadiness;
 
+	// Declared here, not in each for-header: VC6 leaks a for-scope
+	// declaration into the enclosing function, so the second loop below
+	// would be a redefinition (error C2374) on that toolchain.
+	Int i;
 	StratagemPosture best = POSTURE_EXPAND;
 	Real bestScore = score[0];
 	Real secondScore = -1.0f;
-	for (Int i = 1; i < POSTURE_COUNT; ++i)
+	for (i = 1; i < POSTURE_COUNT; ++i)
 	{
 		if (score[i] > bestScore) { secondScore = bestScore; bestScore = score[i]; best = (StratagemPosture)i; }
 		else if (score[i] > secondScore) { secondScore = score[i]; }
@@ -118,7 +122,7 @@ StratagemDirective StratagemPlanner::decideVerbose( const StratagemWorldSignals 
 
 	if (tr != nullptr)
 	{
-		for (Int i = 0; i < POSTURE_COUNT; ++i) tr->votes[i] = score[i];
+		for (i = 0; i < POSTURE_COUNT; ++i) tr->votes[i] = score[i];
 		tr->pressure     = pressure;
 		tr->commitFloor  = k.commitReleaseThresh;
 		tr->trigEager    = trigEager;

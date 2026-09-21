@@ -265,12 +265,6 @@ add_library(corei_ww3d2 INTERFACE)
 
 target_sources(corei_ww3d2 INTERFACE ${WW3D2_SRC})
 
-# Tells RenderBackend.cpp (and anything else that must name the concrete class)
-# whether the D3D11 backend was compiled in at all. Absent on vc6 presets.
-if(WIN32 AND NOT IS_VS6_BUILD)
-    target_compile_definitions(corei_ww3d2 INTERFACE W3DNEXT_HAS_D3D11=1)
-endif()
-
 if (MSVC AND NOT IS_VS6_BUILD)
     target_link_libraries(corei_ww3d2 INTERFACE
         comsuppw
@@ -285,13 +279,18 @@ target_link_libraries(corei_ww3d2 INTERFACE
 
 # D3D11Backend (RENDERER_PORT step 3) needs the D3D11 runtime. Scoped here
 # because the backend source is part of WW3D2_SRC and compiles into every
-# consumer of this interface library.
-if(WIN32)
+# consumer of this interface library. Excluded on vc6 for the same reason the
+# sources are (above): that toolchain has no D3D11 SDK, and linking d3d11.lib
+# there fails the game link outright with LNK1181.
+if(WIN32 AND NOT IS_VS6_BUILD)
     target_link_libraries(corei_ww3d2 INTERFACE
         d3d11
         dxgi
         d3dcompiler
     )
+    # Tells RenderBackend.cpp - the one backend TU vc6 still compiles - whether
+    # the D3D11 backend exists to be constructed at all.
+    target_compile_definitions(corei_ww3d2 INTERFACE W3DNEXT_HAS_D3D11=1)
     # Tell D3D11Backend.cpp that its ww3d2-only companion (D3D11Backend_W3D.cpp,
     # above) supplies the real W3D-typed method bodies, so its placeholder stubs
     # for those methods compile out - leaving exactly one definition per method in

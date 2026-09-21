@@ -233,10 +233,14 @@ void StratagemBrain::debugDrawInfluence() const
 	const Int  h        = m_influenceMap.getGridHeight();
 	const Real cellSize = m_influenceMap.getCellSize();
 
+	// Declared here, not in each for-header: VC6 leaks a for-scope
+	// declaration into the enclosing function, so the second pass below
+	// would be a redefinition (error C2374) on that toolchain.
+	Int cx, cy;
 	// First pass: find the strongest |control| so intensity stays legible across maps.
 	Real maxAbs = 1.0f;
-	for (Int cy = 0; cy < h; ++cy)
-		for (Int cx = 0; cx < w; ++cx)
+	for (cy = 0; cy < h; ++cy)
+		for (cx = 0; cx < w; ++cx)
 		{
 			Real v = m_influenceMap.debugGetCellControl( me, cx, cy );
 			Real a = (v < 0.0f) ? -v : v;
@@ -245,9 +249,9 @@ void StratagemBrain::debugDrawInfluence() const
 		}
 
 	// Second pass: stamp blue (we control) / red (enemy controls), intensity by magnitude.
-	for (Int cy = 0; cy < h; ++cy)
+	for (cy = 0; cy < h; ++cy)
 	{
-		for (Int cx = 0; cx < w; ++cx)
+		for (cx = 0; cx < w; ++cx)
 		{
 			Real control = m_influenceMap.debugGetCellControl( me, cx, cy );
 			if (control == 0.0f)
