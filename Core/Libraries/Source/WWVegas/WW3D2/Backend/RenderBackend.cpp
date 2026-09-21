@@ -130,3 +130,43 @@ void Shutdown_Render_Backend()
 	delete g_renderBackend;
 	g_renderBackend = nullptr;
 }
+
+#if !W3DNEXT_HAS_D3D11
+// ----------------------------------------------------------------------------
+// No-op bodies for the D3D11 mirror hooks, for configurations that compile no
+// D3D11 backend at all (today: the vc6 presets).
+//
+// The hooks are declared in dx8wrapper.h and called from its inline funnels, so
+// every translation unit that touches DX8Wrapper emits a reference to them -
+// while their real bodies live in Backend/D3D11Backend_W3D.cpp, which is not
+// built here. Without these, the game link fails with a wall of LNK2001 from
+// shader.cpp, mapper.cpp, render2d.cpp and friends.
+//
+// Defined here rather than guarding the call sites in the header on purpose: a
+// header guard would depend on every consumer of dx8wrapper.h seeing the same
+// define, and a consumer that missed it would silently skip the mirroring on a
+// real D3D11 build - a behavior bug that looks exactly like correct code. These
+// bodies match what the real hooks do while DX8 is drawing, which is nothing.
+// ----------------------------------------------------------------------------
+
+#include <d3d8.h>
+
+void RB_Mirror_Texgen_Stage_State(unsigned, unsigned, unsigned) {}
+void RB_Mirror_Texture_Transform(unsigned, const D3DMATRIX &) {}
+void RB_Mirror_Grayscale2D(bool) {}
+void RB_Mirror_Terrain_FF_Pass(int, int) {}
+void RB_Mirror_Road_FF_Pass(int) {}
+void RB_Mirror_Tree_Sway(bool, const float *, unsigned int) {}
+void RB_Mirror_World_View_Transform(unsigned, const D3DMATRIX &) {}
+
+// false = "the backend supplied nothing, read the device as before", which is
+// exactly the answer when there is no D3D11 backend.
+bool RB_Get_Backend_Transform(D3DTRANSFORMSTATETYPE, D3DMATRIX &) { return false; }
+
+// Same story for the two texture-side hooks in dx8wrapper.h: the copy-shadow
+// mirror (called from DX8Wrapper::_Copy_DX8_Rects) and the cache eviction
+// (called from ~TextureBaseClass, texture.cpp).
+void D3D11_Mirror_Copy_Rects(IDirect3DSurface8 *, CONST RECT *, UINT,
+	IDirect3DSurface8 *, CONST POINT *) {}
+void D3D11_Evict_Cached_Texture(unsigned) {}
+#endif
