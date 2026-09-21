@@ -25,8 +25,13 @@
 #include "D3D11Backend.h"
 #endif
 
-#include <cstdio>
-#include <cstdlib>
+// <Utility/stdio_adapter.h> rather than <cstdio>: VC6 puts none of the C library
+// in namespace std, and its STLport <cstdio> collides with the adapter's own
+// vsnprintf shim. The adapter is the tree-wide answer to both, so the calls below
+// are unqualified. (The D3D11 twin of this helper in D3D11Backend.cpp keeps
+// std:: - that translation unit never reaches the VC6 toolchain.)
+#include <Utility/stdio_adapter.h>
+#include <stdlib.h>
 #include <windows.h>
 
 IRenderBackend * g_renderBackend = nullptr;
@@ -50,15 +55,15 @@ const char * W3DNext_GetEnv(const char * suffix)
 	char name[128];
 
 	// Preferred, project-named form.
-	std::snprintf(name, sizeof(name), "W3DNEXT_%s", suffix);
-	const char * value = std::getenv(name);
+	snprintf(name, sizeof(name), "W3DNEXT_%s", suffix);
+	const char * value = getenv(name);
 	if (value != nullptr) {
 		return value;
 	}
 
 	// Legacy zpower-tree form, kept so existing harness scripts keep working.
-	std::snprintf(name, sizeof(name), "ZP_%s", suffix);
-	return std::getenv(name);
+	snprintf(name, sizeof(name), "ZP_%s", suffix);
+	return getenv(name);
 }
 
 namespace
@@ -70,11 +75,11 @@ namespace
 void RB_Log_Line(const char * line)
 {
 	const char * path = W3DNext_GetEnv("D3D11_LOG");
-	FILE * f = std::fopen(path != nullptr ? path : "d3d11_backend.log", "a");
+	FILE * f = fopen(path != nullptr ? path : "d3d11_backend.log", "a");
 	if (f != nullptr) {
-		std::fputs(line, f);
-		std::fputc('\n', f);
-		std::fclose(f);
+		fputs(line, f);
+		fputc('\n', f);
+		fclose(f);
 	}
 	OutputDebugStringA(line);
 	OutputDebugStringA("\n");
