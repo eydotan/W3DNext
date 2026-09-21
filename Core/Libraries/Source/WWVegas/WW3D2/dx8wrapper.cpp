@@ -1738,7 +1738,10 @@ static void W3DNext_Dump_DX8_Back_Buffer(IDirect3DDevice8 * device)
 				snprintf(path, sizeof(path), "%s_f%u.ppm", s_prefix, frame);
 				FILE * f = fopen(path, "wb");
 				if (f != nullptr) {
-					unsigned long long lum = 0;
+					// double, not unsigned long long: VC6 has no long long at all, and
+					// the sum only ever feeds a mean - every value here is an exact
+					// integer far below 2^53.
+					double lum = 0.0;
 					fprintf(f, "P6\n%u %u\n255\n", (unsigned int)desc.Width, (unsigned int)desc.Height);
 					const bool is32 = (desc.Format == D3DFMT_X8R8G8B8 || desc.Format == D3DFMT_A8R8G8B8);
 					for (unsigned int y = 0; y < desc.Height; ++y) {
@@ -1762,7 +1765,7 @@ static void W3DNext_Dump_DX8_Back_Buffer(IDirect3DDevice8 * device)
 						}
 					}
 					fclose(f);
-					const double mean = (double)lum / ((double)desc.Width * desc.Height * 3.0);
+					const double mean = lum / ((double)desc.Width * desc.Height * 3.0);
 					const char * lp = W3DNext_GetEnv("D3D11_LOG");
 					char lpath[512];
 					if (lp == nullptr) {
@@ -1773,9 +1776,19 @@ static void W3DNext_Dump_DX8_Back_Buffer(IDirect3DDevice8 * device)
 					if (lf != nullptr) {
 						// t_ms mirrors the D3D11 twin so one parser reads fps from
 						// either backend's dump log. See the D3D11 comment.
-						fprintf(lf, "[DX8 framedump] f%u %ux%u meanlum=%.2f t_ms=%llu -> %s\n",
+						// GetTickCount64 is Vista+ and absent from the VC6 SDK; the 32-bit
+						// counter only differs after 49.7 days of uptime, which no frame
+						// dump outlives. Printed as %.0f so the field stays plain decimal
+						// digits for the shared parser, with no 64-bit format specifier
+						// that VC6 spells differently.
+#if defined(_MSC_VER) && _MSC_VER < 1300
+						const double t_ms = (double)GetTickCount();
+#else
+						const double t_ms = (double)GetTickCount64();
+#endif
+						fprintf(lf, "[DX8 framedump] f%u %ux%u meanlum=%.2f t_ms=%.0f -> %s\n",
 							frame, (unsigned int)desc.Width, (unsigned int)desc.Height, mean,
-							(unsigned long long)GetTickCount64(), path);
+							t_ms, path);
 						fclose(lf);
 					}
 				}
