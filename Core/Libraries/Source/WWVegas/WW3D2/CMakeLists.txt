@@ -240,7 +240,11 @@ set(WW3D2_SRC
 
 # D3D11Backend (RENDERER_PORT step 3) talks to the D3D11 runtime directly and
 # is Windows-only; the DX8 reference backend remains the constructed default.
-if(WIN32)
+# VC6 is excluded: the 1998 toolchain has no <unordered_map> (D3D11States.h) and
+# no D3D11 SDK at all, so the vc6 presets build the DX8 backend only. Everything
+# in Core that asks "is D3D11 drawing?" keeps compiling there - the selection API
+# in RenderBackend.cpp stays, guarded by W3DNEXT_HAS_D3D11 and answering false.
+if(WIN32 AND NOT IS_VS6_BUILD)
     list(APPEND WW3D2_SRC
         Backend/D3D11Backend.cpp
         Backend/D3D11Backend.h
@@ -260,6 +264,12 @@ endif()
 add_library(corei_ww3d2 INTERFACE)
 
 target_sources(corei_ww3d2 INTERFACE ${WW3D2_SRC})
+
+# Tells RenderBackend.cpp (and anything else that must name the concrete class)
+# whether the D3D11 backend was compiled in at all. Absent on vc6 presets.
+if(WIN32 AND NOT IS_VS6_BUILD)
+    target_compile_definitions(corei_ww3d2 INTERFACE W3DNEXT_HAS_D3D11=1)
+endif()
 
 if (MSVC AND NOT IS_VS6_BUILD)
     target_link_libraries(corei_ww3d2 INTERFACE

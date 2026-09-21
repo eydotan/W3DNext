@@ -21,7 +21,9 @@
 
 #include "RenderBackend.h"
 #include "DX8Backend.h"
+#if W3DNEXT_HAS_D3D11
 #include "D3D11Backend.h"
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -90,13 +92,25 @@ void Init_Render_Backend()
 		return;
 	}
 
+#if W3DNEXT_HAS_D3D11
 	if (s_useD3D11Backend) {
 		g_renderBackend = new D3D11Backend();
 		RB_Log_Line("[RenderBackend] constructed D3D11Backend (-gfxBackend d3d11)");
-	} else {
-		g_renderBackend = new DX8Backend();
-		RB_Log_Line("[RenderBackend] constructed DX8Backend (default path)");
+		return;
 	}
+#else
+	// The vc6 presets compile no D3D11 backend at all (no <unordered_map>, no
+	// D3D11 SDK), so -gfxBackend d3d11 cannot be honoured there. Clear the flag
+	// so Is_D3D11_Backend_Active stays honest, say so in the log, and draw with
+	// DX8 rather than leaving g_renderBackend null.
+	if (s_useD3D11Backend) {
+		s_useD3D11Backend = false;
+		RB_Log_Line("[RenderBackend] D3D11 backend not built in this configuration - using DX8Backend");
+	}
+#endif
+
+	g_renderBackend = new DX8Backend();
+	RB_Log_Line("[RenderBackend] constructed DX8Backend (default path)");
 }
 
 void Shutdown_Render_Backend()
