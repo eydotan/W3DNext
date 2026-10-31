@@ -46,7 +46,32 @@ unchanged so older commit messages and notes still resolve.
 | C4 | open | **Wire the bgfx/DX8-dependency auditor as a real fail-on-increase ratchet.** Upstream agreed in principle but deferred until the first caller-migration slice gives it a baseline to count against. Revisit when that lands. |
 | C5 | discuss | **Ask TheSuperHackers admins for a read-only bot** for the Discord channel — the only ToS-clean headless route. Raised 08-09, never decided; weigh against simply reading manually via `window-peek.ps1`. |
 | C6 | open | **Seed the newly-enabled W3DNext Discussions** with a first topic (roadmap or backend-parity), so the surface isn't empty when someone follows the README there. |
+| C8 | discuss | **Contact AFMRAYAN about `afm-rayan/W3DNext`.** They are the first outside party running this backend, which makes them a candidate for C2's capture on other GPUs. Open questions: the v0.2.0 name collision (R22), linking the repo as a real GitHub fork, and attribution back to this repo. Posting is public, so the operator approves the text. Horizon **next**. |
 | C7 | discuss | **Should R3/R4/C1/C2 become public GitHub issues on W3DNext?** They're public promises; issues would make them visible to collaborators and match the "GitHub is the channel" stance. Currently tracked only here, privately. |
+
+## Downstream copy — `afm-rayan/W3DNext`
+
+A public copy of this repo by AFMRAYAN, created 2026-09-22 and not linked as a GitHub fork.
+It branched from `b5cc7a0c` (2026-08-06), so it doesn't have R1, R3/R4/R6, R9 or R14. On top
+it has 9 commits, the first a single snapshot of 126 files (+117,876 lines). It has cut its own
+`v0.2.0` / `v0.2.1` releases (2026-09-22/23). Triaged 2026-10-31 against `af8d3fc9`. Rows
+R16–R22 are numbered after R15, which lives on the unmerged `worktree-vc6-d3d11-exclude` branch.
+
+**Main finding: none of its rendering fixes apply here as they stand.** The code they fix is
+code their snapshot adds: render-to-texture water reflection (`m_rtt`), `Apply_Color_Grade` with
+ACES tone mapping, bloom and god rays. Our backend has none of it (`grep m_rtt\|Apply_Color_Grade`
+over `WW3D2/Backend` returns nothing). The downstream copy has become a visual-enhancement fork,
+while this repo is a DX8-parity backend.
+
+| id | status | item |
+|----|--------|------|
+| R16 | open | **Adopt the VS2022 GUIEdit `min()` cast from `1fce6934`**: `min(tabData->tabCount, (Int)NUM_TAB_PANES)` in both `TabControlProperties.cpp:338`. Our tree still has the uncast line. Look for the upstream commit first ("cast the enum like upstream does") and take it as upstream's change, not as their edit. Oracle: the GUIEdit target builds on VS2022 in both games. Horizon **next**. |
+| R17 | open | **Check whether the ParticleEditor → WWDebug include gap is real here.** In `1fce6934` it's caused by their `WWCommon.h` → `ref_ptr.h` audio bridge, which we don't have. Build ParticleEditor with extras on: green → close as not-applicable; red → adopt their `corei_libraries_source_wwvegas_wwdebug` interface target. Horizon **next**. |
+| R18 | done | **Their smoke-link fix (`1fce6934`, `smoke_backend_stubs.cpp`) is declined.** We fixed the same `W3DNext_GetEnv` link failure in R9 (`500e86fe`). Their stubs for the diag mode and render-to-texture are only needed because of code their snapshot adds. |
+| R19 | discuss | **Their VC6 CI drop opposes R15.** They removed the VC6 jobs because their miniaudio-based `miles.c` can't build on VC6. R15 keeps VC6 green by keeping D3D11 out of that toolchain. Nothing to take; record it as their divergence. Horizon **near**, decide when R15 lands. |
+| R20 | discuss | **Visual enhancements: color grade, ACES, bloom, god rays, water reflection, terrain normal maps, F6 night vision** (`f44129b1`, `2e66626b`, `56fe60f0`). These are outside the DX8-parity goal and would break the frame-compare oracle by design. Question: offer them behind an opt-in flag (off = bit-identical to DX8), or leave them to the downstream copy? If ever taken, the reflection refcount fix in `56fe60f0` comes with them, since that stage-binding discipline is needed for any render target we add. Horizon **far**. |
+| R21 | discuss | **Audio stack replaced** (`547ddfbd`: Miles replaced by a miniaudio/stb_vorbis `miles.c`, plus the sage `RefCountPtr` event migration). Out of scope for a render backend; that belongs upstream if anywhere. Deferred indefinitely unless upstream asks for it. |
+| R22 | discuss | **`v0.2.0` name collision.** Their `v0.2.0` / `v0.2.1` releases already use the version P1 names for "D3D11 is the default". Public visitors will meet both. Decide whether to contact them (C8) or pick a different milestone name. Horizon **next**. |
 
 ## Release
 
