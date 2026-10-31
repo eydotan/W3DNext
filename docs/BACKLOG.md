@@ -65,8 +65,8 @@ while this repo is a DX8-parity backend.
 
 | id | status | item |
 |----|--------|------|
-| R16 | open | **Adopt the VS2022 GUIEdit `min()` cast from `1fce6934`**: `min(tabData->tabCount, (Int)NUM_TAB_PANES)` in both `TabControlProperties.cpp:338`. Our tree still has the uncast line. Look for the upstream commit first ("cast the enum like upstream does") and take it as upstream's change, not as their edit. Oracle: the GUIEdit target builds on VS2022 in both games. Horizon **next**. |
-| R17 | open | **Check whether the ParticleEditor → WWDebug include gap is real here.** In `1fce6934` it's caused by their `WWCommon.h` → `ref_ptr.h` audio bridge, which we don't have. Build ParticleEditor with extras on: green → close as not-applicable; red → adopt their `corei_libraries_source_wwvegas_wwdebug` interface target. Horizon **next**. |
+| R16 | done | **Their GUIEdit `min()` cast (`1fce6934`) isn't needed here.** Our uncast `TabControlProperties.cpp:338` builds green in both games: CI on MSVC 19.44 (run 35582564626, `win32+t+e`) and locally on VS 18 (`g_guiedit`/`z_guiedit` exit 0, 2026-10-31). Their failure most likely comes from something only their tree has. |
+| R17 | done | **Their ParticleEditor → WWDebug include fix isn't needed here.** `core_particleeditor` builds green in CI (MSVC 19.44) and locally on VS 18 (exit 0, 2026-10-31). The gap comes from their `WWCommon.h` → `ref_ptr.h` audio bridge, which this tree doesn't have. |
 | R18 | done | **Their smoke-link fix (`1fce6934`, `smoke_backend_stubs.cpp`) is declined.** We fixed the same `W3DNext_GetEnv` link failure in R9 (`500e86fe`). Their stubs for the diag mode and render-to-texture are only needed because of code their snapshot adds. |
 | R19 | discuss | **Their VC6 CI drop opposes R15.** They removed the VC6 jobs because their miniaudio-based `miles.c` can't build on VC6. R15 keeps VC6 green by keeping D3D11 out of that toolchain. Nothing to take; record it as their divergence. Horizon **near**, decide when R15 lands. |
 | R20 | discuss | **Visual enhancements: color grade, ACES, bloom, god rays, water reflection, terrain normal maps, F6 night vision** (`f44129b1`, `2e66626b`, `56fe60f0`). These are outside the DX8-parity goal and would break the frame-compare oracle by design. Question: offer them behind an opt-in flag (off = bit-identical to DX8), or leave them to the downstream copy? If ever taken, the reflection refcount fix in `56fe60f0` comes with them, since that stage-binding discipline is needed for any render target we add. Horizon **far**. |
@@ -77,7 +77,7 @@ while this repo is a DX8-parity backend.
 
 | id | status | item |
 |----|--------|------|
-| P1 | discuss | **v0.2.0 = flipping D3D11 to default.** Criteria named in conversation (artifact fixed, menu fps parity, wave gap closed, clean runs on other machines) but never written into a milestone. R1/R2 are two of them. |
+| P1 | discuss | **"D3D11-default" milestone = flipping D3D11 to default.** Renamed from "v0.2.0" on 2026-10-31: `afm-rayan/W3DNext` already published a `v0.2.0` (R22). The version number waits on C8. Criteria named in conversation (artifact fixed, menu fps parity, wave gap closed, clean runs on other machines) but never written into a milestone. R1/R2 are two of them. |
 | P2 | blocked | **Maximize-window feature** (`feature/maximizable-window`, unmerged): awaiting a click-accuracy verdict, plus a stretch-vs-increment-2 call. Blocked on a user decision. |
 | P3 | done | **Verify the weekly automation actually fired.** Verified 2026-09-07: Issue #1 (Weekly triage digest) posted automatically to `eydotan/W3DNext` on 2026-09-07T07:18:44Z; CI green. |
 | P5 | open | **Retire the obsolete flight-recorder trap.** `C:\ZeroPowerRun\generalszh.exe` is still the 08-05 recorder build; the artifact it hunted is root-caused, so the instrumented binary and `debug/menu-black-recorder` branch can be wound down. |
