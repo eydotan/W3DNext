@@ -186,6 +186,15 @@ public:
 	virtual void Stage_Dynamic_Vertices(const void * data, unsigned int size_bytes, unsigned int fvf) {}
 	virtual void Stage_Dynamic_Indices(const unsigned short * indices, unsigned int count) {}
 
+	// Write-time capture for a caller that raw-locks a bound vertex buffer's D3D8
+	// interface and fills one sub-range after the bind (W3DWaterTracks: bound once,
+	// then each track appends at `byte_offset` with NOOVERWRITE/DISCARD). The bind-
+	// time upload has already read the buffer by then, so the draw would see stale
+	// bytes. `data` is the written range, valid only for the call. The backend keeps
+	// the bytes at their offset so the caller's index_base_offset stays correct.
+	// Default no-op: the DX8 backend draws from the D3D8 buffer directly.
+	virtual void Stage_Vertex_Range(const void * data, unsigned int byte_offset, unsigned int size_bytes, unsigned int fvf) {}
+
 	virtual void Set_Shader(const ShaderClass & shader) = 0;
 	virtual void Get_Shader(ShaderClass & shader) = 0;
 	// Override the alpha-test reference programmed by Set_Shader (normalized

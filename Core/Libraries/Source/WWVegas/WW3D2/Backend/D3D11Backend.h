@@ -37,6 +37,7 @@
 #include "matrix4.h" // Matrix4x4 stored by value for the transform constant buffer
 #include "vector3.h" // Vector3 stored by value (ambient) + typed lighting setters
 #include <map>       // uploaded-texture cache
+#include <vector>    // Stage_Vertex_Range shadow
 
 // D3D11 interfaces are forward-declared so this header stays as light as its
 // Backend/ siblings; d3d11.h is included by D3D11Backend.cpp only.
@@ -405,6 +406,7 @@ public:
 	// take raw bytes only - no WW3D2 header graph needed).
 	virtual void Stage_Dynamic_Vertices(const void * data, unsigned int size_bytes, unsigned int fvf) override;
 	virtual void Stage_Dynamic_Indices(const unsigned short * indices, unsigned int count) override;
+	virtual void Stage_Vertex_Range(const void * data, unsigned int byte_offset, unsigned int size_bytes, unsigned int fvf) override;
 
 	virtual void Set_Shader(const ShaderClass & shader) override;
 	virtual void Get_Shader(ShaderClass & shader) override;
@@ -601,6 +603,11 @@ private:
 	unsigned int m_vsBytecodeSize;
 
 	unsigned int m_vertexStride; // bytes per vertex of the bound VB
+	// CPU shadow for Stage_Vertex_Range: each written range lands at its own byte
+	// offset, then the shadow [0, offset+size) is uploaded so the caller's
+	// index_base_offset addresses the fresh bytes. Bytes outside the current range
+	// are stale and never drawn.
+	std::vector<unsigned char> m_stagedRange;
 	unsigned int m_indexCount;   // indices in the bound IB
 	bool m_pipelineReady;
 

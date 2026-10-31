@@ -318,6 +318,7 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 			return batchStart;
 		batchStart=0;	//reset start of page to first vertex
 	}
+	VertexFormatXYZDUV1 *const vbStart = vb;	// W3DNext: start of the written range (Stage_Vertex_Range below)
 
 	//Adjust wave position in a non-linear way so that it slows down as it hits the target.  Using 1/4 sine wave
 	//seems to work okay since it maxes out at 1.0 at our final position.
@@ -469,6 +470,14 @@ Int WaterTracksObj::render(DX8VertexBufferClass	*vertexBuffer, Int batchStart)
 		vb->u1=1.0f;
 	vb->v1=1.0f;
 	vb++;
+
+	// W3DNext: this raw lock bypasses the wrapper's lock classes, and the VB was bound
+	// (and read by the D3D11 bind-time upload) before this write. Hand the fresh range
+	// to the backend while the mapping is valid. No-op on DX8.
+	g_renderBackend->Stage_Vertex_Range(vbStart,
+		batchStart*vertexBuffer->FVF_Info().Get_FVF_Size(),
+		(unsigned int)((vb-vbStart)*sizeof(VertexFormatXYZDUV1)),
+		vertexBuffer->FVF_Info().Get_FVF());
 
 	vertexBuffer->Get_DX8_Vertex_Buffer()->Unlock();
 

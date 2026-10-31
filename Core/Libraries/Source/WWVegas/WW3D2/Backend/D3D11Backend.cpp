@@ -1676,6 +1676,19 @@ void D3D11Backend::Stage_Dynamic_Indices(const unsigned short * indices, unsigne
 	}
 }
 
+void D3D11Backend::Stage_Vertex_Range(const void * data, unsigned int byte_offset, unsigned int size_bytes, unsigned int fvf)
+{
+	if (data == nullptr || size_bytes == 0) {
+		return;
+	}
+	const size_t end = static_cast<size_t>(byte_offset) + size_bytes;
+	if (m_stagedRange.size() < end) {
+		m_stagedRange.resize(end);
+	}
+	std::memcpy(&m_stagedRange[byte_offset], data, size_bytes);
+	Upload_Vertices(&m_stagedRange[0], static_cast<unsigned int>(end), fvf);
+}
+
 // ----------------------------------------------------------------------------
 //
 // Frame + clear + viewport (real)
